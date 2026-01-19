@@ -7,6 +7,9 @@
 .buildlog/
 .history
 
+# Local configuration (contains IP address)
+**/lib/config.dart
+
 
 
 # Flutter repo-specific
