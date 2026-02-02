@@ -1,7 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/user.dart';
+import '../../features/auth/models/user.dart';
+import '../../features/profile/models/calorie_info.dart';
 import '../config.dart';
 
 class ApiService {
@@ -133,12 +134,97 @@ class ApiService {
     await _clearToken();
   }
 
+  static Future<UpdateResult> updateProfile({
+    double? currentWeight,
+    double? goalWeight,
+    String? gender,
+    String? profileImagePath,
+    double? height,
+    int? age,
+    String? activityLevel,
+    String? goalType,
+  }) async {
+    final token = await getToken();
+    if (token == null) {
+      return UpdateResult(success: false, error: 'Not authenticated');
+    }
+
+    try {
+      final body = <String, dynamic>{};
+      if (currentWeight != null) body['current_weight'] = currentWeight;
+      if (goalWeight != null) body['goal_weight'] = goalWeight;
+      if (gender != null) body['gender'] = gender;
+      if (profileImagePath != null) body['profile_image_path'] = profileImagePath;
+      if (height != null) body['height'] = height;
+      if (age != null) body['age'] = age;
+      if (activityLevel != null) body['activity_level'] = activityLevel;
+      if (goalType != null) body['goal_type'] = goalType;
+
+      final response = await http.put(
+        Uri.parse('$baseUrl/auth/profile'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(body),
+      );
+
+      if (response.statusCode == 200) {
+        _currentUser = User.fromJson(jsonDecode(response.body));
+        return UpdateResult(success: true, user: _currentUser);
+      } else {
+        final data = jsonDecode(response.body);
+        return UpdateResult(
+          success: false,
+          error: data['detail'] ?? 'Update failed',
+        );
+      }
+    } catch (e) {
+      return UpdateResult(success: false, error: 'Connection error: $e');
+    }
+  }
+
+  static void clearUserCache() {
+    _currentUser = null;
+  }
+
   static Future<bool> healthCheck() async {
     try {
       final response = await http.get(Uri.parse('$baseUrl/health'));
       return response.statusCode == 200;
     } catch (e) {
       return false;
+    }
+  }
+
+  /// Get calorie information based on user profile
+  static Future<CalorieResult> getCalorieInfo() async {
+    final token = await getToken();
+    if (token == null) {
+      return CalorieResult(success: false, error: 'Not authenticated');
+    }
+
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/nutrition/calories'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final calorieInfo = CalorieInfo.fromJson(jsonDecode(response.body));
+        return CalorieResult(success: true, calorieInfo: calorieInfo);
+      } else {
+        final data = jsonDecode(response.body);
+        return CalorieResult(
+          success: false,
+          error: data['detail'] ?? 'Failed to get calorie info',
+        );
+      }
+    } catch (e) {
+      return CalorieResult(success: false, error: 'Connection error: $e');
     }
   }
 }
@@ -149,4 +235,20 @@ class AuthResult {
   final String? error;
 
   AuthResult({required this.success, this.user, this.error});
+}
+
+class UpdateResult {
+  final bool success;
+  final User? user;
+  final String? error;
+
+  UpdateResult({required this.success, this.user, this.error});
+}
+
+class CalorieResult {
+  final bool success;
+  final CalorieInfo? calorieInfo;
+  final String? error;
+
+  CalorieResult({required this.success, this.calorieInfo, this.error});
 }
