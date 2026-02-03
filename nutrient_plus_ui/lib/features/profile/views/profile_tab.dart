@@ -38,6 +38,8 @@ class _ProfileTabState extends State<ProfileTab> {
           const SizedBox(height: 24),
           _buildHealthTargets(),
           const SizedBox(height: 24),
+          _buildMealPreferences(),
+          const SizedBox(height: 24),
           _buildSyncSettings(),
           const SizedBox(height: 24),
           _buildSignOutButton(),
@@ -495,6 +497,292 @@ class _ProfileTabState extends State<ProfileTab> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildMealPreferences() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Meal Preferences',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _buildMealsPerDayCard(),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildMaxCookTimeCard(),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMealsPerDayCard() {
+    final mealsPerDay = _user?.preferredMealsPerDay ?? 3;
+
+    return GestureDetector(
+      onTap: () => _showMealsPerDayDialog(),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey[200]!),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.restaurant_menu, size: 18, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'MEALS/DAY',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[500],
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const Spacer(),
+                Icon(Icons.edit, size: 14, color: Colors.grey[400]),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  mealsPerDay.toString(),
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4, left: 4),
+                  child: Text(
+                    'meals',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[400],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMaxCookTimeCard() {
+    final maxCookTime = _user?.maxCookTime;
+    final hasLimit = maxCookTime != null;
+
+    return GestureDetector(
+      onTap: () => _showMaxCookTimeDialog(),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey[200]!),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.timer, size: 18, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'COOK TIME',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[500],
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const Spacer(),
+                Icon(Icons.edit, size: 14, color: Colors.grey[400]),
+              ],
+            ),
+            const SizedBox(height: 8),
+            hasLimit
+                ? Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        maxCookTime.toString(),
+                        style: const TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4, left: 4),
+                        child: Text(
+                          'min',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[400],
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Text(
+                    'No limit',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[500],
+                    ),
+                  ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showMealsPerDayDialog() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Meals Per Day',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _buildSelectionOption(
+              label: '3 Meals',
+              description: 'Breakfast, Lunch, Dinner',
+              isSelected: (_user?.preferredMealsPerDay ?? 3) == 3,
+              onTap: () async {
+                Navigator.pop(context);
+                final updatedUser = _user?.copyWith(preferredMealsPerDay: 3);
+                widget.onUserUpdated(updatedUser);
+                await ApiService.updateProfile(preferredMealsPerDay: 3);
+              },
+            ),
+            _buildSelectionOption(
+              label: '4 Meals',
+              description: 'Breakfast, Lunch, Snack, Dinner',
+              isSelected: _user?.preferredMealsPerDay == 4,
+              onTap: () async {
+                Navigator.pop(context);
+                final updatedUser = _user?.copyWith(preferredMealsPerDay: 4);
+                widget.onUserUpdated(updatedUser);
+                await ApiService.updateProfile(preferredMealsPerDay: 4);
+              },
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showMaxCookTimeDialog() {
+    final controller = TextEditingController(
+      text: _user?.maxCookTime?.toString() ?? '',
+    );
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Max Cook Time'),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Set the maximum cooking time for recipes in your meal plans.',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Minutes',
+                hintText: 'e.g. 30',
+                suffixText: 'min',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              // Clear the value (set to null/unlimited)
+              final updatedUser = _user?.copyWith(clearMaxCookTime: true);
+              widget.onUserUpdated(updatedUser);
+              await ApiService.updateProfile(clearMaxCookTime: true);
+            },
+            child: Text(
+              'No Limit',
+              style: TextStyle(color: Colors.grey[600]),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final value = int.tryParse(controller.text);
+              if (value != null && value > 0) {
+                Navigator.pop(context);
+                final updatedUser = _user?.copyWith(maxCookTime: value);
+                widget.onUserUpdated(updatedUser);
+                await ApiService.updateProfile(maxCookTime: value);
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text('Save'),
+          ),
+        ],
       ),
     );
   }

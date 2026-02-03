@@ -10,11 +10,10 @@ class WatchScreen extends StatefulWidget {
 
 class _WatchScreenState extends State<WatchScreen> {
   final Health _health = Health();
-  
+
   bool _isLoading = true;
   bool _isAuthorized = false;
-  String? _error;
-  
+
   // Selected day index (0 = today, 1 = yesterday, etc.)
   int _selectedDayIndex = 0;
   
@@ -46,7 +45,6 @@ class _WatchScreenState extends State<WatchScreen> {
   Future<void> _initHealth() async {
     setState(() {
       _isLoading = true;
-      _error = null;
     });
 
     try {
@@ -153,17 +151,23 @@ class _WatchScreenState extends State<WatchScreen> {
       double calories = 0;
       double sleepMinutes = 0;
 
+      healthData = _health.removeDuplicates(healthData);
+
+      // Group steps by source app to avoid double-counting from multiple apps
+      Map<String, int> stepsBySource = {};
       for (var point in healthData) {
-        switch (point.type) {
-          case HealthDataType.STEPS:
-            steps += (point.value as NumericHealthValue).numericValue.toInt();
-            break;
-          case HealthDataType.ACTIVE_ENERGY_BURNED:
-            calories += (point.value as NumericHealthValue).numericValue.toDouble();
-            break;
-          default:
-            break;
+        if (point.type == HealthDataType.STEPS) {
+          final source = point.sourceName;
+          final value = (point.value as NumericHealthValue).numericValue.toInt();
+          stepsBySource[source] = (stepsBySource[source] ?? 0) + value;
+        } else if (point.type == HealthDataType.ACTIVE_ENERGY_BURNED) {
+          calories += (point.value as NumericHealthValue).numericValue.toDouble();
         }
+      }
+
+      // Take the maximum from any single source
+      if (stepsBySource.isNotEmpty) {
+        steps = stepsBySource.values.reduce((a, b) => a > b ? a : b);
       }
       
       Set<String> processedSleepSessions = {};
@@ -206,19 +210,33 @@ class _WatchScreenState extends State<WatchScreen> {
         startTime: sevenDaysAgo,
         endTime: now,
       );
-      
-      // Group data by day
+
+      data = _health.removeDuplicates(data);
+
+      // Group steps by day and source to avoid double-counting
+      Map<int, Map<String, int>> stepsByDayAndSource = {};
+
       for (var point in data) {
-        // Calculate which day index (0 = 6 days ago, 6 = today)
         final daysDiff = now.difference(DateTime(point.dateFrom.year, point.dateFrom.month, point.dateFrom.day)).inDays;
         final dayIndex = 6 - daysDiff;
-        
+
         if (dayIndex >= 0 && dayIndex < 7) {
           if (point.type == HealthDataType.STEPS) {
-            weeklySteps[dayIndex] += (point.value as NumericHealthValue).numericValue.toInt();
+            final source = point.sourceName;
+            stepsByDayAndSource[dayIndex] ??= {};
+            stepsByDayAndSource[dayIndex]![source] =
+                (stepsByDayAndSource[dayIndex]![source] ?? 0) +
+                (point.value as NumericHealthValue).numericValue.toInt();
           } else if (point.type == HealthDataType.ACTIVE_ENERGY_BURNED) {
             weeklyCalories[dayIndex] += (point.value as NumericHealthValue).numericValue.toDouble();
           }
+        }
+      }
+
+      // For each day, take the max from any single source
+      for (int i = 0; i < 7; i++) {
+        if (stepsByDayAndSource.containsKey(i) && stepsByDayAndSource[i]!.isNotEmpty) {
+          weeklySteps[i] = stepsByDayAndSource[i]!.values.reduce((a, b) => a > b ? a : b);
         }
       }
     } catch (e) {

@@ -143,6 +143,9 @@ class ApiService {
     int? age,
     String? activityLevel,
     String? goalType,
+    int? preferredMealsPerDay,
+    int? maxCookTime,
+    bool clearMaxCookTime = false,
   }) async {
     final token = await getToken();
     if (token == null) {
@@ -159,6 +162,12 @@ class ApiService {
       if (age != null) body['age'] = age;
       if (activityLevel != null) body['activity_level'] = activityLevel;
       if (goalType != null) body['goal_type'] = goalType;
+      if (preferredMealsPerDay != null) body['preferred_meals_per_day'] = preferredMealsPerDay;
+      if (clearMaxCookTime) {
+        body['max_cook_time'] = null;
+      } else if (maxCookTime != null) {
+        body['max_cook_time'] = maxCookTime;
+      }
 
       final response = await http.put(
         Uri.parse('$baseUrl/auth/profile'),

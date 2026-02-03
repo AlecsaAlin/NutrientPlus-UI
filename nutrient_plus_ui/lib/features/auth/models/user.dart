@@ -11,6 +11,8 @@ class User {
   final int? age;
   final String? activityLevel;
   final String? goalType;
+  final int? preferredMealsPerDay;
+  final int? maxCookTime;
 
   User({
     required this.id,
@@ -25,6 +27,8 @@ class User {
     this.age,
     this.activityLevel,
     this.goalType,
+    this.preferredMealsPerDay,
+    this.maxCookTime,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -41,6 +45,8 @@ class User {
       age: json['age'],
       activityLevel: json['activity_level'],
       goalType: json['goal_type'],
+      preferredMealsPerDay: json['preferred_meals_per_day'],
+      maxCookTime: json['max_cook_time'],
     );
   }
 
@@ -58,6 +64,8 @@ class User {
       'age': age,
       'activity_level': activityLevel,
       'goal_type': goalType,
+      'preferred_meals_per_day': preferredMealsPerDay,
+      'max_cook_time': maxCookTime,
     };
   }
 
@@ -74,6 +82,9 @@ class User {
     int? age,
     String? activityLevel,
     String? goalType,
+    int? preferredMealsPerDay,
+    int? maxCookTime,
+    bool clearMaxCookTime = false,
   }) {
     return User(
       id: id ?? this.id,
@@ -88,6 +99,8 @@ class User {
       age: age ?? this.age,
       activityLevel: activityLevel ?? this.activityLevel,
       goalType: goalType ?? this.goalType,
+      preferredMealsPerDay: preferredMealsPerDay ?? this.preferredMealsPerDay,
+      maxCookTime: clearMaxCookTime ? null : (maxCookTime ?? this.maxCookTime),
     );
   }
 }
