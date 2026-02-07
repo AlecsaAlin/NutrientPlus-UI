@@ -2,6 +2,6 @@
 // Change the IP to your server's IP address
 
 class AppConfig {
-  static const String serverIP = '192.168.80.35';
+  static const String serverIP = '192.168.81.167';
   static const int serverPort = 8000;
 }

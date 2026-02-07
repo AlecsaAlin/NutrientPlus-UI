@@ -1,5 +1,4 @@
 import '../services/api_service.dart';
-import '../../features/auth/models/user.dart';
 
 /// Repository for authentication operations
 class AuthRepository {
