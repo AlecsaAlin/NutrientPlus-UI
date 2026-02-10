@@ -345,6 +345,27 @@ class ApiService {
     }
   }
 
+  /// Sync user's meal history from past saved plans
+  /// This should be called on app start to update the ML model's training data
+  static Future<bool> syncMealHistory() async {
+    final token = await getToken();
+    if (token == null) return false;
+
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/meals/sync-history'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
   /// Save/rate a recipe to meal history
   static Future<bool> rateMeal({required int recipeId}) async {
     final token = await getToken();
@@ -366,6 +387,101 @@ class ApiService {
       return response.statusCode == 200;
     } catch (e) {
       return false;
+    }
+  }
+
+  /// Add a recipe to favorites
+  static Future<bool> addFavorite({required int recipeId}) async {
+    final token = await getToken();
+    if (token == null) return false;
+
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/meals/favorites'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'recipe_id': recipeId}),
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Remove a recipe from favorites
+  static Future<bool> removeFavorite({required int recipeId}) async {
+    final token = await getToken();
+    if (token == null) return false;
+
+    try {
+      final response = await http.delete(
+        Uri.parse('$baseUrl/meals/favorites/$recipeId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Check if a recipe is in favorites
+  static Future<bool> isFavorite({required int recipeId}) async {
+    final token = await getToken();
+    if (token == null) return false;
+
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/meals/favorites/check/$recipeId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['is_favorite'] == true;
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Get all favorite recipes
+  static Future<FavoritesResult> getFavorites() async {
+    final token = await getToken();
+    if (token == null) {
+      return FavoritesResult(success: false, error: 'Not authenticated');
+    }
+
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/meals/favorites'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        final favorites = data
+            .map((item) => FavoriteRecipe.fromJson(item))
+            .toList();
+        return FavoritesResult(success: true, favorites: favorites);
+      } else {
+        return FavoritesResult(success: false, error: 'Failed to load favorites');
+      }
+    } catch (e) {
+      return FavoritesResult(success: false, error: 'Connection error: $e');
     }
   }
 }
@@ -408,4 +524,37 @@ class SavedPlansResult {
   final String? error;
 
   SavedPlansResult({required this.success, this.plans, this.error});
+}
+
+class FavoriteRecipe {
+  final int id;
+  final int recipeId;
+  final DateTime createdAt;
+  final RecipeDetail? recipe;
+
+  FavoriteRecipe({
+    required this.id,
+    required this.recipeId,
+    required this.createdAt,
+    this.recipe,
+  });
+
+  factory FavoriteRecipe.fromJson(Map<String, dynamic> json) {
+    return FavoriteRecipe(
+      id: json['id'],
+      recipeId: json['recipe_id'],
+      createdAt: DateTime.parse(json['created_at']),
+      recipe: json['recipe'] != null
+          ? RecipeDetail.fromJson(json['recipe'])
+          : null,
+    );
+  }
+}
+
+class FavoritesResult {
+  final bool success;
+  final List<FavoriteRecipe>? favorites;
+  final String? error;
+
+  FavoritesResult({required this.success, this.favorites, this.error});
 }

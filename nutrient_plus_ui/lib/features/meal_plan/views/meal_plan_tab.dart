@@ -11,36 +11,71 @@ class MealPlanTab extends StatefulWidget {
 }
 
 class _MealPlanTabState extends State<MealPlanTab> {
-  int _selectedDayIndex = DateTime.now().weekday - 1;
+  late DateTime _selectedDate;
+  late ScrollController _dateScrollController;
   bool _isLoading = false;
   bool _isLoadingSaved = true;
   String? _error;
 
-  // Cache generated plans per day index
-  final Map<int, MealPlanResponse> _weeklyPlans = {};
+  // Cache generated plans by date string (YYYY-MM-DD)
+  final Map<String, MealPlanResponse> _savedPlans = {};
 
-  MealPlanResponse? get _currentPlan => _weeklyPlans[_selectedDayIndex];
+  // Number of days to show before and after today
+  static const int _daysRange = 15;
+
+  MealPlanResponse? get _currentPlan => _savedPlans[_formatDate(_selectedDate)];
 
   @override
   void initState() {
     super.initState();
+    _selectedDate = DateTime.now();
+    _dateScrollController = ScrollController();
     _loadSavedPlans();
+    _syncMealHistory();
+
+    // Scroll to today after build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToSelectedDate();
+    });
   }
 
-  /// Get the date for a given day index in the current week
-  DateTime _dateForDayIndex(int dayIndex) {
-    final now = DateTime.now();
-    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-    return startOfWeek.add(Duration(days: dayIndex));
+  /// Sync meal history from past days to improve ML recommendations
+  Future<void> _syncMealHistory() async {
+    await ApiService.syncMealHistory();
+  }
+
+  @override
+  void dispose() {
+    _dateScrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToSelectedDate() {
+    final todayIndex = _daysRange; // Today is at center
+    final itemWidth = 54.0; // 46 width + 8 margin
+    final screenWidth = MediaQuery.of(context).size.width;
+    final offset = (todayIndex * itemWidth) - (screenWidth / 2) + (itemWidth / 2);
+    _dateScrollController.animateTo(
+      offset.clamp(0.0, _dateScrollController.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
   }
 
   String _formatDate(DateTime date) {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
 
+  DateTime _getDateForIndex(int index) {
+    final today = DateTime.now();
+    final todayOnly = DateTime(today.year, today.month, today.day);
+    return todayOnly.add(Duration(days: index - _daysRange));
+  }
+
   Future<void> _loadSavedPlans() async {
-    final startDate = _formatDate(_dateForDayIndex(0));
-    final endDate = _formatDate(_dateForDayIndex(6));
+    final today = DateTime.now();
+    final startDate = _formatDate(today.subtract(const Duration(days: _daysRange)));
+    final endDate = _formatDate(today.add(const Duration(days: _daysRange)));
 
     final result = await ApiService.getSavedMealPlans(
       startDate: startDate,
@@ -52,12 +87,7 @@ class _MealPlanTabState extends State<MealPlanTab> {
     setState(() {
       _isLoadingSaved = false;
       if (result.success && result.plans != null) {
-        for (final entry in result.plans!.entries) {
-          // Convert date string to day index
-          final date = DateTime.parse(entry.key);
-          final dayIndex = date.weekday - 1;
-          _weeklyPlans[dayIndex] = entry.value;
-        }
+        _savedPlans.addAll(result.plans!);
       }
     });
   }
@@ -75,10 +105,10 @@ class _MealPlanTabState extends State<MealPlanTab> {
     setState(() {
       _isLoading = false;
       if (result.success && result.mealPlan != null) {
-        _weeklyPlans[_selectedDayIndex] = result.mealPlan!;
+        final dateKey = _formatDate(_selectedDate);
+        _savedPlans[dateKey] = result.mealPlan!;
         // Save to backend in the background
-        final date = _formatDate(_dateForDayIndex(_selectedDayIndex));
-        ApiService.saveMealPlan(planDate: date, plan: result.mealPlan!);
+        ApiService.saveMealPlan(planDate: dateKey, plan: result.mealPlan!);
       } else {
         _error = result.error ?? 'Failed to generate meal plan';
       }
@@ -105,16 +135,13 @@ class _MealPlanTabState extends State<MealPlanTab> {
     });
 
     // Save updated plan to backend
-    final date = _formatDate(_dateForDayIndex(_selectedDayIndex));
-    ApiService.saveMealPlan(planDate: date, plan: plan);
+    final dateKey = _formatDate(_selectedDate);
+    ApiService.saveMealPlan(planDate: dateKey, plan: plan);
   }
 
   void _showMealDetails(MealSlot slot, int mealIndex) {
     final recipe = slot.recipe;
     if (recipe == null) return;
-
-    final color = _getSlotColor(slot.slot);
-    final icon = _getSlotIcon(slot.slot);
 
     showModalBottomSheet(
       context: context,
@@ -122,266 +149,53 @@ class _MealPlanTabState extends State<MealPlanTab> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.85,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (context, scrollController) => SingleChildScrollView(
-          controller: scrollController,
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Handle bar
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
+      builder: (context) => _MealDetailsSheet(
+        slot: slot,
+        mealIndex: mealIndex,
+        onSwapAlternative: _swapAlternative,
+        getSlotColor: _getSlotColor,
+        getSlotIcon: _getSlotIcon,
+        capitalize: _capitalize,
+        cleanIngredients: _cleanIngredients,
+        cleanInstructions: _cleanInstructions,
+      ),
+    );
+  }
 
-              // Header: meal type + icon
-              Row(
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(icon, color: color, size: 24),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    _capitalize(slot.slot),
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: color,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // Recipe name
-              Text(
-                recipe.name,
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Nutrition info row
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.grey[50],
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[200]!),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _buildNutritionItem(
-                        'Calories', '${recipe.calories.toInt()}', 'kcal', Colors.orange),
-                    _buildNutritionItem(
-                        'Protein', '${recipe.proteinG.toInt()}', 'g', Colors.red[400]!),
-                    _buildNutritionItem(
-                        'Carbs', '${recipe.carbsG.toInt()}', 'g', Colors.blue[400]!),
-                    _buildNutritionItem(
-                        'Fat', '${recipe.fatG.toInt()}', 'g', Colors.amber[600]!),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Cook time if available
-              if (recipe.totalTimeMinutes != null) ...[
-                Row(
-                  children: [
-                    Icon(Icons.timer_outlined, size: 20, color: Colors.grey[600]),
-                    const SizedBox(width: 8),
-                    Text(
-                      '${recipe.totalTimeMinutes} minutes',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[700],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-              ],
-
-              // Category if available
-              if (recipe.category != null && recipe.category!.isNotEmpty) ...[
-                Row(
-                  children: [
-                    Icon(Icons.category_outlined, size: 20, color: Colors.grey[600]),
-                    const SizedBox(width: 8),
-                    Text(
-                      recipe.category!,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[700],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-              ],
-
-              // Ingredients section
-              if (recipe.ingredients != null && recipe.ingredients!.isNotEmpty) ...[
-                const Text(
-                  'Ingredients',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[50],
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey[200]!),
-                  ),
-                  child: Text(
-                    recipe.ingredients!,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[700],
-                      height: 1.6,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-              ],
-
-              // Instructions section
-              if (recipe.instructions != null && recipe.instructions!.isNotEmpty) ...[
-                const Text(
-                  'Instructions',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[50],
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey[200]!),
-                  ),
-                  child: Text(
-                    recipe.instructions!,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[700],
-                      height: 1.6,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-              ],
-
-              // Alternatives section
-              if (slot.alternatives.isNotEmpty) ...[
-                Row(
-                  children: [
-                    Icon(Icons.swap_horiz, color: color, size: 22),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Change to Alternative',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                ...List.generate(slot.alternatives.length, (altIndex) {
-                  final alt = slot.alternatives[altIndex];
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _swapAlternative(mealIndex, altIndex);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: color.withValues(alpha: 0.3)),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    alt.name,
-                                    style: const TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Row(
-                                    children: [
-                                      _buildMiniChip('${alt.calories.toInt()} kcal', Colors.orange),
-                                      const SizedBox(width: 6),
-                                      _buildMiniChip('P ${alt.proteinG.toInt()}g', Colors.red[400]!),
-                                      const SizedBox(width: 6),
-                                      _buildMiniChip('C ${alt.carbsG.toInt()}g', Colors.blue[400]!),
-                                      const SizedBox(width: 6),
-                                      _buildMiniChip('F ${alt.fatG.toInt()}g', Colors.amber[600]!),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Icon(Icons.chevron_right, color: color),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-              ],
-
-              const SizedBox(height: 20),
-            ],
+  Widget _buildNutritionItemStatic(String label, String value, String unit, Color color) {
+    return Column(
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: Colors.grey[500],
           ),
         ),
-      ),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2, left: 2),
+              child: Text(
+                unit,
+                style: TextStyle(fontSize: 10, color: Colors.grey[400]),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -520,36 +334,46 @@ class _MealPlanTabState extends State<MealPlanTab> {
 
   @override
   Widget build(BuildContext context) {
-    final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    final fullDays = [
+    final dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final fullDayNames = [
       'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
       'Sunday'
     ];
-    final today = DateTime.now().weekday - 1;
-    final now = DateTime.now();
-    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+    final today = DateTime.now();
+    final todayOnly = DateTime(today.year, today.month, today.day);
+    final selectedOnly = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
 
     return Column(
       children: [
-        // Week day selector
+        // Scrollable date picker
         Container(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: List.generate(7, (index) {
-              final date = startOfWeek.add(Duration(days: index));
-              final isSelected = index == _selectedDayIndex;
-              final isToday = index == today;
+          height: 90,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: ListView.builder(
+            controller: _dateScrollController,
+            scrollDirection: Axis.horizontal,
+            itemCount: _daysRange * 2 + 1, // days before + today + days after
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            itemBuilder: (context, index) {
+              final date = _getDateForIndex(index);
+              final isSelected = date.year == selectedOnly.year &&
+                  date.month == selectedOnly.month &&
+                  date.day == selectedOnly.day;
+              final isToday = date.year == todayOnly.year &&
+                  date.month == todayOnly.month &&
+                  date.day == todayOnly.day;
+              final dayName = dayNames[date.weekday - 1];
+              final hasPlan = _savedPlans.containsKey(_formatDate(date));
 
               return GestureDetector(
                 onTap: () {
                   setState(() {
-                    _selectedDayIndex = index;
+                    _selectedDate = date;
                   });
                 },
                 child: Container(
                   width: 46,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
                   decoration: BoxDecoration(
                     color: isSelected ? AppColors.primary : Colors.transparent,
                     borderRadius: BorderRadius.circular(12),
@@ -558,11 +382,12 @@ class _MealPlanTabState extends State<MealPlanTab> {
                         : null,
                   ),
                   child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        days[index],
+                        dayName,
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 11,
                           fontWeight: FontWeight.w600,
                           color: isSelected ? Colors.white : Colors.grey[600],
                         ),
@@ -578,11 +403,21 @@ class _MealPlanTabState extends State<MealPlanTab> {
                               : AppColors.textPrimary,
                         ),
                       ),
+                      if (hasPlan && !isSelected)
+                        Container(
+                          margin: const EdgeInsets.only(top: 4),
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            color: AppColors.primary,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
                     ],
                   ),
                 ),
               );
-            }),
+            },
           ),
         ),
 
@@ -610,7 +445,7 @@ class _MealPlanTabState extends State<MealPlanTab> {
               : _error != null
                   ? _buildErrorState()
                   : _currentPlan != null
-                      ? _buildMealPlanContent(fullDays, today)
+                      ? _buildMealPlanContent(fullDayNames, todayOnly)
                       : _buildEmptyState(),
         ),
       ],
@@ -689,8 +524,17 @@ class _MealPlanTabState extends State<MealPlanTab> {
     );
   }
 
-  Widget _buildMealPlanContent(List<String> fullDays, int today) {
+  Widget _buildMealPlanContent(List<String> fullDayNames, DateTime todayOnly) {
     final plan = _currentPlan!;
+    final selectedOnly = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+    final isToday = selectedOnly.year == todayOnly.year &&
+        selectedOnly.month == todayOnly.month &&
+        selectedOnly.day == todayOnly.day;
+    final dayName = fullDayNames[_selectedDate.weekday - 1];
+
+    // Format the date nicely
+    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final dateLabel = '${months[_selectedDate.month - 1]} ${_selectedDate.day}';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -705,7 +549,7 @@ class _MealPlanTabState extends State<MealPlanTab> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    fullDays[_selectedDayIndex],
+                    dayName,
                     style: const TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
@@ -714,7 +558,7 @@ class _MealPlanTabState extends State<MealPlanTab> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    _selectedDayIndex == today ? 'Today' : '',
+                    isToday ? 'Today' : dateLabel,
                     style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                   ),
                 ],
@@ -1057,6 +901,42 @@ class _MealPlanTabState extends State<MealPlanTab> {
 
   // Helpers
 
+  String _cleanIngredients(String ingredients) {
+    String cleaned = _cleanText(ingredients);
+    // Replace commas with newlines for better readability (for ingredients list)
+    cleaned = cleaned.replaceAll(', ', '\n• ');
+    // Add bullet to first item if we added bullets
+    if (cleaned.contains('\n• ')) {
+      cleaned = '• $cleaned';
+    }
+    return cleaned.trim();
+  }
+
+  String _cleanText(String text) {
+    String cleaned = text;
+    // Remove leading "c" if present (from Python representation)
+    if (cleaned.startsWith('c(') || cleaned.startsWith('c"') || cleaned.startsWith("c'")) {
+      cleaned = cleaned.substring(1);
+    }
+    // Remove surrounding quotes
+    cleaned = cleaned.replaceAll('"', '').replaceAll("'", '');
+    // Remove parentheses if wrapping the whole string
+    if (cleaned.startsWith('(') && cleaned.endsWith(')')) {
+      cleaned = cleaned.substring(1, cleaned.length - 1);
+    }
+    return cleaned.trim();
+  }
+
+  String _cleanInstructions(String instructions) {
+    String cleaned = _cleanText(instructions);
+    // After each period, start a new line and remove any comma that follows
+    cleaned = cleaned.replaceAllMapped(
+      RegExp(r'\.\s*,?\s*'),
+      (match) => '.\n\n',
+    );
+    return cleaned.trim();
+  }
+
   Color _getSlotColor(String slot) {
     switch (slot.toLowerCase()) {
       case 'breakfast':
@@ -1105,5 +985,428 @@ class _MealPlanTabState extends State<MealPlanTab> {
   String _capitalize(String s) {
     if (s.isEmpty) return s;
     return s[0].toUpperCase() + s.substring(1);
+  }
+}
+
+
+/// Stateful widget for meal details bottom sheet with favorite functionality
+class _MealDetailsSheet extends StatefulWidget {
+  final MealSlot slot;
+  final int mealIndex;
+  final void Function(int, int) onSwapAlternative;
+  final Color Function(String) getSlotColor;
+  final IconData Function(String) getSlotIcon;
+  final String Function(String) capitalize;
+  final String Function(String) cleanIngredients;
+  final String Function(String) cleanInstructions;
+
+  const _MealDetailsSheet({
+    required this.slot,
+    required this.mealIndex,
+    required this.onSwapAlternative,
+    required this.getSlotColor,
+    required this.getSlotIcon,
+    required this.capitalize,
+    required this.cleanIngredients,
+    required this.cleanInstructions,
+  });
+
+  @override
+  State<_MealDetailsSheet> createState() => _MealDetailsSheetState();
+}
+
+class _MealDetailsSheetState extends State<_MealDetailsSheet> {
+  bool _isFavorite = false;
+  bool _isLoadingFavorite = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkFavoriteStatus();
+  }
+
+  Future<void> _checkFavoriteStatus() async {
+    final recipe = widget.slot.recipe;
+    if (recipe == null) return;
+
+    final isFav = await ApiService.isFavorite(recipeId: recipe.recipeId);
+    if (mounted) {
+      setState(() {
+        _isFavorite = isFav;
+        _isLoadingFavorite = false;
+      });
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    final recipe = widget.slot.recipe;
+    if (recipe == null) return;
+
+    setState(() => _isLoadingFavorite = true);
+
+    bool success;
+    if (_isFavorite) {
+      success = await ApiService.removeFavorite(recipeId: recipe.recipeId);
+    } else {
+      success = await ApiService.addFavorite(recipeId: recipe.recipeId);
+    }
+
+    if (mounted) {
+      setState(() {
+        if (success) {
+          _isFavorite = !_isFavorite;
+        }
+        _isLoadingFavorite = false;
+      });
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_isFavorite ? 'Added to favorites' : 'Removed from favorites'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildNutritionItem(String label, String value, String unit, Color color) {
+    return Column(
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: Colors.grey[500],
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2, left: 2),
+              child: Text(
+                unit,
+                style: TextStyle(fontSize: 10, color: Colors.grey[400]),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMiniChip(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final recipe = widget.slot.recipe!;
+    final color = widget.getSlotColor(widget.slot.slot);
+    final icon = widget.getSlotIcon(widget.slot.slot);
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.85,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (context, scrollController) => SingleChildScrollView(
+        controller: scrollController,
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Handle bar
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+
+            // Header: meal type + icon + favorite button
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: color, size: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    widget.capitalize(widget.slot.slot),
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: color,
+                    ),
+                  ),
+                ),
+                // Favorite button
+                IconButton(
+                  onPressed: _isLoadingFavorite ? null : _toggleFavorite,
+                  icon: _isLoadingFavorite
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          _isFavorite ? Icons.favorite : Icons.favorite_border,
+                          color: _isFavorite ? Colors.red : Colors.grey[400],
+                          size: 28,
+                        ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Recipe name
+            Text(
+              recipe.name,
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Nutrition info row
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey[200]!),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildNutritionItem(
+                      'Calories', '${recipe.calories.toInt()}', 'kcal', Colors.orange),
+                  _buildNutritionItem(
+                      'Protein', '${recipe.proteinG.toInt()}', 'g', Colors.red[400]!),
+                  _buildNutritionItem(
+                      'Carbs', '${recipe.carbsG.toInt()}', 'g', Colors.blue[400]!),
+                  _buildNutritionItem(
+                      'Fat', '${recipe.fatG.toInt()}', 'g', Colors.amber[600]!),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Cook time if available
+            if (recipe.totalTimeMinutes != null) ...[
+              Row(
+                children: [
+                  Icon(Icons.timer_outlined, size: 20, color: Colors.grey[600]),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${recipe.totalTimeMinutes} minutes',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[700],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+            ],
+
+            // Category if available
+            if (recipe.category != null && recipe.category!.isNotEmpty) ...[
+              Row(
+                children: [
+                  Icon(Icons.category_outlined, size: 20, color: Colors.grey[600]),
+                  const SizedBox(width: 8),
+                  Text(
+                    recipe.category!,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[700],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+            ],
+
+            // Ingredients section
+            if (recipe.ingredients != null && recipe.ingredients!.isNotEmpty) ...[
+              const Text(
+                'Ingredients',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[200]!),
+                ),
+                child: Text(
+                  widget.cleanIngredients(recipe.ingredients!),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[700],
+                    height: 1.6,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+
+            // Instructions section
+            if (recipe.instructions != null && recipe.instructions!.isNotEmpty) ...[
+              const Text(
+                'Instructions',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[200]!),
+                ),
+                child: Text(
+                  widget.cleanInstructions(recipe.instructions!),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[700],
+                    height: 1.6,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+
+            // Alternatives section
+            if (widget.slot.alternatives.isNotEmpty) ...[
+              Row(
+                children: [
+                  Icon(Icons.swap_horiz, color: color, size: 22),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Change to Alternative',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ...List.generate(widget.slot.alternatives.length, (altIndex) {
+                final alt = widget.slot.alternatives[altIndex];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () {
+                      Navigator.pop(context);
+                      widget.onSwapAlternative(widget.mealIndex, altIndex);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: color.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  alt.name,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    _buildMiniChip('${alt.calories.toInt()} kcal', Colors.orange),
+                                    const SizedBox(width: 6),
+                                    _buildMiniChip('P ${alt.proteinG.toInt()}g', Colors.red[400]!),
+                                    const SizedBox(width: 6),
+                                    _buildMiniChip('C ${alt.carbsG.toInt()}g', Colors.blue[400]!),
+                                    const SizedBox(width: 6),
+                                    _buildMiniChip('F ${alt.fatG.toInt()}g', Colors.amber[600]!),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.chevron_right, color: color),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ],
+
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
   }
 }
