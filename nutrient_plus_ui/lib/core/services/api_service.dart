@@ -484,6 +484,74 @@ class ApiService {
       return FavoritesResult(success: false, error: 'Connection error: $e');
     }
   }
+
+  /// Rate a recipe (1-5 stars)
+  static Future<bool> rateRecipe({required int recipeId, required double rating}) async {
+    final token = await getToken();
+    if (token == null) return false;
+
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/meals/ratings'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'recipe_id': recipeId,
+          'rating': rating,
+        }),
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Get user's rating for a recipe
+  static Future<double?> getRecipeRating({required int recipeId}) async {
+    final token = await getToken();
+    if (token == null) return null;
+
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/meals/ratings/$recipeId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['rating']?.toDouble();
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Delete user's rating for a recipe
+  static Future<bool> deleteRecipeRating({required int recipeId}) async {
+    final token = await getToken();
+    if (token == null) return false;
+
+    try {
+      final response = await http.delete(
+        Uri.parse('$baseUrl/meals/ratings/$recipeId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
 }
 
 class AuthResult {

@@ -11,6 +11,7 @@ class RecipeDetail {
   final String? category;
   final String? ingredients;
   final String? instructions;
+  final int? numIngredients;
   final double predictedRating;
   final double matchScore;
 
@@ -27,6 +28,7 @@ class RecipeDetail {
     this.category,
     this.ingredients,
     this.instructions,
+    this.numIngredients,
     required this.predictedRating,
     required this.matchScore,
   });
@@ -45,6 +47,7 @@ class RecipeDetail {
       category: json['category'],
       ingredients: json['ingredients'],
       instructions: json['instructions'],
+      numIngredients: json['num_ingredients'],
       predictedRating: (json['predicted_rating'] ?? 0).toDouble(),
       matchScore: (json['match_score'] ?? 0).toDouble(),
     );
@@ -63,6 +66,7 @@ class RecipeDetail {
     'category': category,
     'ingredients': ingredients,
     'instructions': instructions,
+    'num_ingredients': numIngredients,
     'predicted_rating': predictedRating,
     'match_score': matchScore,
   };

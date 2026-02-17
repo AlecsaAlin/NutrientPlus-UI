@@ -821,6 +821,12 @@ class _MealPlanTabState extends State<MealPlanTab> {
                       '', '${recipe.totalTimeMinutes} min', Colors.grey[500]!,
                       icon: Icons.timer_outlined),
                 ],
+                if (recipe.numIngredients != null && recipe.numIngredients! > 0) ...[
+                  const SizedBox(width: 8),
+                  _buildMacroChip(
+                      '', '${recipe.numIngredients} ing', Colors.green[600]!,
+                      icon: Icons.shopping_basket_outlined),
+                ],
                 const Spacer(),
                 if (slot.alternatives.isNotEmpty)
                   Row(
@@ -901,15 +907,20 @@ class _MealPlanTabState extends State<MealPlanTab> {
 
   // Helpers
 
-  String _cleanIngredients(String ingredients) {
+  List<String> _parseIngredients(String ingredients) {
     String cleaned = _cleanText(ingredients);
-    // Replace commas with newlines for better readability (for ingredients list)
-    cleaned = cleaned.replaceAll(', ', '\n• ');
-    // Add bullet to first item if we added bullets
-    if (cleaned.contains('\n• ')) {
-      cleaned = '• $cleaned';
-    }
-    return cleaned.trim();
+    // Split by pipe character (|) to get individual ingredients
+    return cleaned
+        .split('|')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+  }
+
+  String _cleanIngredients(String ingredients) {
+    final items = _parseIngredients(ingredients);
+    if (items.isEmpty) return '';
+    return items.map((e) => '• $e').join('\n');
   }
 
   String _cleanText(String text) {
@@ -1018,22 +1029,31 @@ class _MealDetailsSheet extends StatefulWidget {
 class _MealDetailsSheetState extends State<_MealDetailsSheet> {
   bool _isFavorite = false;
   bool _isLoadingFavorite = true;
+  double? _userRating;
+  bool _isLoadingRating = true;
 
   @override
   void initState() {
     super.initState();
-    _checkFavoriteStatus();
+    _loadInitialData();
   }
 
-  Future<void> _checkFavoriteStatus() async {
+  Future<void> _loadInitialData() async {
     final recipe = widget.slot.recipe;
     if (recipe == null) return;
 
-    final isFav = await ApiService.isFavorite(recipeId: recipe.recipeId);
+    // Load favorite status and rating in parallel
+    final results = await Future.wait([
+      ApiService.isFavorite(recipeId: recipe.recipeId),
+      ApiService.getRecipeRating(recipeId: recipe.recipeId),
+    ]);
+
     if (mounted) {
       setState(() {
-        _isFavorite = isFav;
+        _isFavorite = results[0] as bool;
+        _userRating = results[1] as double?;
         _isLoadingFavorite = false;
+        _isLoadingRating = false;
       });
     }
   }
@@ -1068,6 +1088,49 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
         );
       }
     }
+  }
+
+  Future<void> _setRating(double rating) async {
+    final recipe = widget.slot.recipe;
+    if (recipe == null) return;
+
+    final previousRating = _userRating;
+    setState(() => _userRating = rating);
+
+    final success = await ApiService.rateRecipe(recipeId: recipe.recipeId, rating: rating);
+
+    if (!success && mounted) {
+      setState(() => _userRating = previousRating);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to save rating'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Widget _buildStarRating() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (index) {
+        final starValue = index + 1.0;
+        final isFilled = _userRating != null && _userRating! >= starValue;
+        final isHalf = _userRating != null && _userRating! >= starValue - 0.5 && _userRating! < starValue;
+
+        return GestureDetector(
+          onTap: _isLoadingRating ? null : () => _setRating(starValue),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Icon(
+              isFilled ? Icons.star : (isHalf ? Icons.star_half : Icons.star_border),
+              color: Colors.amber,
+              size: 32,
+            ),
+          ),
+        );
+      }),
+    );
   }
 
   Widget _buildNutritionItem(String label, String value, String unit, Color color) {
@@ -1206,6 +1269,29 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
                 color: AppColors.textPrimary,
               ),
             ),
+            const SizedBox(height: 12),
+
+            // Star rating
+            Row(
+              children: [
+                Text(
+                  'Your rating:',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _isLoadingRating
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : _buildStarRating(),
+              ],
+            ),
             const SizedBox(height: 16),
 
             // Nutrition info row
@@ -1272,13 +1358,35 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
 
             // Ingredients section
             if (recipe.ingredients != null && recipe.ingredients!.isNotEmpty) ...[
-              const Text(
-                'Ingredients',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
+              Row(
+                children: [
+                  const Text(
+                    'Ingredients',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  if (recipe.numIngredients != null && recipe.numIngredients! > 0) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.green[50],
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '${recipe.numIngredients}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.green[700],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(height: 12),
               Container(
