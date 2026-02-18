@@ -485,6 +485,36 @@ class ApiService {
     }
   }
 
+  /// Get all user's ratings with recipe details
+  static Future<RatingsResult> getUserRatings() async {
+    final token = await getToken();
+    if (token == null) {
+      return RatingsResult(success: false, error: 'Not authenticated');
+    }
+
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/meals/ratings'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        final ratings = data
+            .map((item) => UserRating.fromJson(item))
+            .toList();
+        return RatingsResult(success: true, ratings: ratings);
+      } else {
+        return RatingsResult(success: false, error: 'Failed to load ratings');
+      }
+    } catch (e) {
+      return RatingsResult(success: false, error: 'Connection error: $e');
+    }
+  }
+
   /// Rate a recipe (1-5 stars)
   static Future<bool> rateRecipe({required int recipeId, required double rating}) async {
     final token = await getToken();
@@ -526,6 +556,29 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['rating']?.toDouble();
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Get full recipe details by ID
+  static Future<RecipeDetail?> getRecipeById({required int recipeId}) async {
+    final token = await getToken();
+    if (token == null) return null;
+
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/meals/recipe/$recipeId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return RecipeDetail.fromJson(jsonDecode(response.body));
       }
       return null;
     } catch (e) {
@@ -597,24 +650,37 @@ class SavedPlansResult {
 class FavoriteRecipe {
   final int id;
   final int recipeId;
+  final String recipeName;
+  final double calories;
+  final double proteinG;
+  final double fatG;
+  final double carbsG;
+  final int? totalTimeMinutes;
   final DateTime createdAt;
-  final RecipeDetail? recipe;
 
   FavoriteRecipe({
     required this.id,
     required this.recipeId,
+    required this.recipeName,
+    required this.calories,
+    required this.proteinG,
+    required this.fatG,
+    required this.carbsG,
+    this.totalTimeMinutes,
     required this.createdAt,
-    this.recipe,
   });
 
   factory FavoriteRecipe.fromJson(Map<String, dynamic> json) {
     return FavoriteRecipe(
       id: json['id'],
       recipeId: json['recipe_id'],
+      recipeName: json['recipe_name'] ?? '',
+      calories: (json['calories'] ?? 0).toDouble(),
+      proteinG: (json['protein_g'] ?? 0).toDouble(),
+      fatG: (json['fat_g'] ?? 0).toDouble(),
+      carbsG: (json['carbs_g'] ?? 0).toDouble(),
+      totalTimeMinutes: json['total_time_minutes'],
       createdAt: DateTime.parse(json['created_at']),
-      recipe: json['recipe'] != null
-          ? RecipeDetail.fromJson(json['recipe'])
-          : null,
     );
   }
 }
@@ -625,4 +691,56 @@ class FavoritesResult {
   final String? error;
 
   FavoritesResult({required this.success, this.favorites, this.error});
+}
+
+class UserRating {
+  final int id;
+  final int recipeId;
+  final String recipeName;
+  final double calories;
+  final double proteinG;
+  final double fatG;
+  final double carbsG;
+  final int? totalTimeMinutes;
+  final double rating;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  UserRating({
+    required this.id,
+    required this.recipeId,
+    required this.recipeName,
+    required this.calories,
+    required this.proteinG,
+    required this.fatG,
+    required this.carbsG,
+    this.totalTimeMinutes,
+    required this.rating,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  factory UserRating.fromJson(Map<String, dynamic> json) {
+    return UserRating(
+      id: json['id'],
+      recipeId: json['recipe_id'],
+      recipeName: json['recipe_name'] ?? '',
+      calories: (json['calories'] ?? 0).toDouble(),
+      proteinG: (json['protein_g'] ?? 0).toDouble(),
+      fatG: (json['fat_g'] ?? 0).toDouble(),
+      carbsG: (json['carbs_g'] ?? 0).toDouble(),
+      totalTimeMinutes: json['total_time_minutes'],
+      rating: json['rating'].toDouble(),
+      createdAt: DateTime.parse(json['created_at']),
+      updatedAt: DateTime.parse(json['updated_at']),
+    );
+  }
+}
+
+class RatingsResult {
+  final bool success;
+  final List<UserRating>? ratings;
+  final String? error;
+
+  RatingsResult({required this.success, this.ratings, this.error});
 }

@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:health/health.dart';
 
-class WatchScreen extends StatefulWidget {
-  const WatchScreen({super.key});
+class WatchTab extends StatefulWidget {
+  const WatchTab({super.key});
 
   @override
-  State<WatchScreen> createState() => _WatchScreenState();
+  State<WatchTab> createState() => _WatchTabState();
 }
 
-class _WatchScreenState extends State<WatchScreen> {
+class _WatchTabState extends State<WatchTab> {
   final Health _health = Health();
 
   bool _isLoading = true;

@@ -206,17 +206,3 @@ class MealPlanResponse {
   };
 }
 
-// Keep InventoryItem here — inventory_tab.dart imports from this file
-class InventoryItem {
-  final String name;
-  final String quantity;
-  final String category;
-  final String emoji;
-
-  InventoryItem({
-    required this.name,
-    required this.quantity,
-    required this.category,
-    required this.emoji,
-  });
-}

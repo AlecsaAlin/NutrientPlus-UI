@@ -92,13 +92,61 @@ class _MealPlanTabState extends State<MealPlanTab> {
     });
   }
 
+  /// Collect recipe IDs from a sliding 10-day window ending at the selected date.
+
+  List<int> _getRecentRecipeIds() {
+    final today = DateTime.now();
+    final todayOnly = DateTime(today.year, today.month, today.day);
+    final selectedOnly = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+    final recipeIds = <int>{};
+
+    // How many future days (today → selected, exclusive of selected)
+    final daysAhead = selectedOnly.isAfter(todayOnly)
+        ? selectedOnly.difference(todayOnly).inDays
+        : 0;
+
+    // Past days to look back so total window = 10
+    final pastDays = (10 - daysAhead).clamp(0, 10);
+
+    // Collect from past
+    for (int i = 1; i <= pastDays; i++) {
+      _collectRecipeIds(todayOnly.subtract(Duration(days: i)), recipeIds);
+    }
+
+    // Collect from today up to (but not including) the selected date
+    for (int i = 0; i < daysAhead; i++) {
+      _collectRecipeIds(todayOnly.add(Duration(days: i)), recipeIds);
+    }
+
+    // If selected date is today or in the past, still include today
+    if (daysAhead == 0) {
+      _collectRecipeIds(todayOnly, recipeIds);
+    }
+
+    return recipeIds.toList();
+  }
+
+  void _collectRecipeIds(DateTime date, Set<int> recipeIds) {
+    final plan = _savedPlans[_formatDate(date)];
+    if (plan == null) return;
+    for (final slot in plan.meals) {
+      if (slot.recipe != null) {
+        recipeIds.add(slot.recipe!.recipeId);
+      }
+    }
+  }
+
   Future<void> _generatePlan() async {
     setState(() {
       _isLoading = true;
       _error = null;
     });
 
-    final result = await ApiService.generateMealPlan();
+    final excludeIds = _getRecentRecipeIds();
+
+    final result = await ApiService.generateMealPlan(
+      excludeRecipeIds: excludeIds.isNotEmpty ? excludeIds : null,
+    );
 
     if (!mounted) return;
 
@@ -115,7 +163,16 @@ class _MealPlanTabState extends State<MealPlanTab> {
     });
   }
 
+  bool get _canSwap {
+    final today = DateTime.now();
+    final todayOnly = DateTime(today.year, today.month, today.day);
+    final selectedOnly = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+    return !selectedOnly.isBefore(todayOnly);
+  }
+
   void _swapAlternative(int mealIndex, int altIndex) {
+    if (!_canSwap) return;
+
     final plan = _currentPlan;
     if (plan == null) return;
 
@@ -152,6 +209,7 @@ class _MealPlanTabState extends State<MealPlanTab> {
       builder: (context) => _MealDetailsSheet(
         slot: slot,
         mealIndex: mealIndex,
+        canSwap: _canSwap,
         onSwapAlternative: _swapAlternative,
         getSlotColor: _getSlotColor,
         getSlotIcon: _getSlotIcon,
@@ -237,6 +295,7 @@ class _MealPlanTabState extends State<MealPlanTab> {
   }
 
   void _showAlternatives(int mealIndex) {
+    if (!_canSwap) return;
     final slot = _currentPlan?.meals[mealIndex];
     if (slot == null || slot.alternatives.isEmpty) return;
 
@@ -466,19 +525,21 @@ class _MealPlanTabState extends State<MealPlanTab> {
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 14, color: AppColors.textSecondary),
             ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: _generatePlan,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+            if (_canSwap) ...[
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: _generatePlan,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -486,11 +547,16 @@ class _MealPlanTabState extends State<MealPlanTab> {
   }
 
   Widget _buildEmptyState() {
+    final isPast = !_canSwap;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.restaurant_menu, size: 56, color: Colors.grey[300]),
+          Icon(
+            isPast ? Icons.history : Icons.restaurant_menu,
+            size: 56,
+            color: Colors.grey[300],
+          ),
           const SizedBox(height: 16),
           Text(
             'No meal plan for this day',
@@ -502,23 +568,27 @@ class _MealPlanTabState extends State<MealPlanTab> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Generate a personalized plan based on your goals',
+            isPast
+                ? 'You can only generate plans for today or future dates'
+                : 'Generate a personalized plan based on your goals',
             style: TextStyle(fontSize: 13, color: Colors.grey[400]),
           ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: _generatePlan,
-            icon: const Icon(Icons.auto_awesome),
-            label: const Text('Generate Meal Plan'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+          if (!isPast) ...[
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _generatePlan,
+              icon: const Icon(Icons.auto_awesome),
+              label: const Text('Generate Meal Plan'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -601,23 +671,24 @@ class _MealPlanTabState extends State<MealPlanTab> {
 
           const SizedBox(height: 12),
 
-          // Regenerate button
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _generatePlan,
-              icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('Regenerate Plan'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primary,
-                side: const BorderSide(color: AppColors.primary),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+          // Regenerate button (only for today or future)
+          if (_canSwap)
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _generatePlan,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Regenerate Plan'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  side: const BorderSide(color: AppColors.primary),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ),
-          ),
           const SizedBox(height: 80),
         ],
       ),
@@ -805,31 +876,28 @@ class _MealPlanTabState extends State<MealPlanTab> {
             const SizedBox(height: 12),
 
             // Macro nutrients row
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 _buildMacroChip(
                     'P', '${recipe.proteinG.toInt()}g', Colors.red[400]!),
-                const SizedBox(width: 8),
                 _buildMacroChip(
                     'C', '${recipe.carbsG.toInt()}g', Colors.blue[400]!),
-                const SizedBox(width: 8),
                 _buildMacroChip(
                     'F', '${recipe.fatG.toInt()}g', Colors.amber[600]!),
-                if (recipe.totalTimeMinutes != null) ...[
-                  const SizedBox(width: 8),
+                if (recipe.totalTimeMinutes != null)
                   _buildMacroChip(
                       '', '${recipe.totalTimeMinutes} min', Colors.grey[500]!,
                       icon: Icons.timer_outlined),
-                ],
-                if (recipe.numIngredients != null && recipe.numIngredients! > 0) ...[
-                  const SizedBox(width: 8),
+                if (recipe.numIngredients != null && recipe.numIngredients! > 0)
                   _buildMacroChip(
                       '', '${recipe.numIngredients} ing', Colors.green[600]!,
                       icon: Icons.shopping_basket_outlined),
-                ],
-                const Spacer(),
-                if (slot.alternatives.isNotEmpty)
+                if (slot.alternatives.isNotEmpty && _canSwap)
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(Icons.swap_horiz, size: 14, color: Colors.grey[400]),
                       const SizedBox(width: 4),
@@ -1004,6 +1072,7 @@ class _MealPlanTabState extends State<MealPlanTab> {
 class _MealDetailsSheet extends StatefulWidget {
   final MealSlot slot;
   final int mealIndex;
+  final bool canSwap;
   final void Function(int, int) onSwapAlternative;
   final Color Function(String) getSlotColor;
   final IconData Function(String) getSlotIcon;
@@ -1014,6 +1083,7 @@ class _MealDetailsSheet extends StatefulWidget {
   const _MealDetailsSheet({
     required this.slot,
     required this.mealIndex,
+    required this.canSwap,
     required this.onSwapAlternative,
     required this.getSlotColor,
     required this.getSlotIcon,
@@ -1441,7 +1511,7 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
             ],
 
             // Alternatives section
-            if (widget.slot.alternatives.isNotEmpty) ...[
+            if (widget.slot.alternatives.isNotEmpty && widget.canSwap) ...[
               Row(
                 children: [
                   Icon(Icons.swap_horiz, color: color, size: 22),

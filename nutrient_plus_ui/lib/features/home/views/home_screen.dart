@@ -4,10 +4,10 @@ import '../../../core/services/api_service.dart';
 import '../../auth/models/user.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../auth/views/login_screen.dart';
-import './watch_screen.dart';
+import '../../watch/views/watch_tab.dart';
 import '../../profile/views/profile_tab.dart';
 import '../../meal_plan/views/meal_plan_tab.dart';
-import '../../inventory/views/inventory_tab.dart';
+import '../../saved/views/saved_tab.dart' show SavedRecipesTab;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -196,8 +196,8 @@ class _HomeScreenState extends State<HomeScreen> {
             label: 'Meal Plan',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.kitchen),
-            label: 'Inventory',
+            icon: Icon(Icons.bookmark),
+            label: 'Saved',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.watch),
@@ -217,9 +217,9 @@ class _HomeScreenState extends State<HomeScreen> {
       case 0:
         return const MealPlanTab();
       case 1:
-        return const InventoryTab();
+        return const SavedRecipesTab();
       case 2:
-        return const WatchScreen();
+        return const WatchTab();
       case 3:
         return ProfileTab(
           user: _user,
