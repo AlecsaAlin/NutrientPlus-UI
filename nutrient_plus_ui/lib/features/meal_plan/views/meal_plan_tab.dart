@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/meal_models.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../core/services/api_service.dart';
+import '../../../core/utils/text_helpers.dart';
+import '../../../core/repositories/recipe_repository.dart';
+import '../viewmodels/meal_plan_viewmodel.dart';
 
 class MealPlanTab extends StatefulWidget {
   const MealPlanTab({super.key});
@@ -11,27 +14,15 @@ class MealPlanTab extends StatefulWidget {
 }
 
 class _MealPlanTabState extends State<MealPlanTab> {
-  late DateTime _selectedDate;
+  late MealPlanViewModel _viewModel;
   late ScrollController _dateScrollController;
-  bool _isLoading = false;
-  bool _isLoadingSaved = true;
-  String? _error;
-
-  // Cache generated plans by date string (YYYY-MM-DD)
-  final Map<String, MealPlanResponse> _savedPlans = {};
-
-  // Number of days to show before and after today
-  static const int _daysRange = 15;
-
-  MealPlanResponse? get _currentPlan => _savedPlans[_formatDate(_selectedDate)];
 
   @override
   void initState() {
     super.initState();
-    _selectedDate = DateTime.now();
+    _viewModel = MealPlanViewModel();
+    _viewModel.init();
     _dateScrollController = ScrollController();
-    _loadSavedPlans();
-    _syncMealHistory();
 
     // Scroll to today after build
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -39,20 +30,16 @@ class _MealPlanTabState extends State<MealPlanTab> {
     });
   }
 
-  /// Sync meal history from past days to improve ML recommendations
-  Future<void> _syncMealHistory() async {
-    await ApiService.syncMealHistory();
-  }
-
   @override
   void dispose() {
     _dateScrollController.dispose();
+    _viewModel.dispose();
     super.dispose();
   }
 
   void _scrollToSelectedDate() {
-    final todayIndex = _daysRange; // Today is at center
-    final itemWidth = 54.0; // 46 width + 8 margin
+    final todayIndex = MealPlanViewModel.daysRange;
+    final itemWidth = 54.0;
     final screenWidth = MediaQuery.of(context).size.width;
     final offset = (todayIndex * itemWidth) - (screenWidth / 2) + (itemWidth / 2);
     _dateScrollController.animateTo(
@@ -62,141 +49,7 @@ class _MealPlanTabState extends State<MealPlanTab> {
     );
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-  }
-
-  DateTime _getDateForIndex(int index) {
-    final today = DateTime.now();
-    final todayOnly = DateTime(today.year, today.month, today.day);
-    return todayOnly.add(Duration(days: index - _daysRange));
-  }
-
-  Future<void> _loadSavedPlans() async {
-    final today = DateTime.now();
-    final startDate = _formatDate(today.subtract(const Duration(days: _daysRange)));
-    final endDate = _formatDate(today.add(const Duration(days: _daysRange)));
-
-    final result = await ApiService.getSavedMealPlans(
-      startDate: startDate,
-      endDate: endDate,
-    );
-
-    if (!mounted) return;
-
-    setState(() {
-      _isLoadingSaved = false;
-      if (result.success && result.plans != null) {
-        _savedPlans.addAll(result.plans!);
-      }
-    });
-  }
-
-  /// Collect recipe IDs from a sliding 10-day window ending at the selected date.
-
-  List<int> _getRecentRecipeIds() {
-    final today = DateTime.now();
-    final todayOnly = DateTime(today.year, today.month, today.day);
-    final selectedOnly = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
-    final recipeIds = <int>{};
-
-    // How many future days (today → selected, exclusive of selected)
-    final daysAhead = selectedOnly.isAfter(todayOnly)
-        ? selectedOnly.difference(todayOnly).inDays
-        : 0;
-
-    // Past days to look back so total window = 10
-    final pastDays = (10 - daysAhead).clamp(0, 10);
-
-    // Collect from past
-    for (int i = 1; i <= pastDays; i++) {
-      _collectRecipeIds(todayOnly.subtract(Duration(days: i)), recipeIds);
-    }
-
-    // Collect from today up to (but not including) the selected date
-    for (int i = 0; i < daysAhead; i++) {
-      _collectRecipeIds(todayOnly.add(Duration(days: i)), recipeIds);
-    }
-
-    // If selected date is today or in the past, still include today
-    if (daysAhead == 0) {
-      _collectRecipeIds(todayOnly, recipeIds);
-    }
-
-    return recipeIds.toList();
-  }
-
-  void _collectRecipeIds(DateTime date, Set<int> recipeIds) {
-    final plan = _savedPlans[_formatDate(date)];
-    if (plan == null) return;
-    for (final slot in plan.meals) {
-      if (slot.recipe != null) {
-        recipeIds.add(slot.recipe!.recipeId);
-      }
-    }
-  }
-
-  Future<void> _generatePlan() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-
-    final excludeIds = _getRecentRecipeIds();
-
-    final result = await ApiService.generateMealPlan(
-      excludeRecipeIds: excludeIds.isNotEmpty ? excludeIds : null,
-    );
-
-    if (!mounted) return;
-
-    setState(() {
-      _isLoading = false;
-      if (result.success && result.mealPlan != null) {
-        final dateKey = _formatDate(_selectedDate);
-        _savedPlans[dateKey] = result.mealPlan!;
-        // Save to backend in the background
-        ApiService.saveMealPlan(planDate: dateKey, plan: result.mealPlan!);
-      } else {
-        _error = result.error ?? 'Failed to generate meal plan';
-      }
-    });
-  }
-
-  bool get _canSwap {
-    final today = DateTime.now();
-    final todayOnly = DateTime(today.year, today.month, today.day);
-    final selectedOnly = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
-    return !selectedOnly.isBefore(todayOnly);
-  }
-
-  void _swapAlternative(int mealIndex, int altIndex) {
-    if (!_canSwap) return;
-
-    final plan = _currentPlan;
-    if (plan == null) return;
-
-    setState(() {
-      final slot = plan.meals[mealIndex];
-      final currentRecipe = slot.recipe;
-      final alternative = slot.alternatives[altIndex];
-
-      // Swap primary with alternative
-      slot.recipe = alternative;
-      if (currentRecipe != null) {
-        slot.alternatives[altIndex] = currentRecipe;
-      }
-
-      // Recalculate daily totals with new recipes
-      plan.recalculateTotals();
-    });
-
-    // Save updated plan to backend
-    final dateKey = _formatDate(_selectedDate);
-    ApiService.saveMealPlan(planDate: dateKey, plan: plan);
-  }
-
-  void _showMealDetails(MealSlot slot, int mealIndex) {
+  void _showMealDetails(MealPlanViewModel viewModel, MealSlot slot, int mealIndex) {
     final recipe = slot.recipe;
     if (recipe == null) return;
 
@@ -209,184 +62,10 @@ class _MealPlanTabState extends State<MealPlanTab> {
       builder: (context) => _MealDetailsSheet(
         slot: slot,
         mealIndex: mealIndex,
-        canSwap: _canSwap,
-        onSwapAlternative: _swapAlternative,
-        getSlotColor: _getSlotColor,
-        getSlotIcon: _getSlotIcon,
-        capitalize: _capitalize,
-        cleanIngredients: _cleanIngredients,
-        cleanInstructions: _cleanInstructions,
-      ),
-    );
-  }
-
-  Widget _buildNutritionItemStatic(String label, String value, String unit, Color color) {
-    return Column(
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w500,
-            color: Colors.grey[500],
-          ),
-        ),
-        const SizedBox(height: 4),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: color,
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 2, left: 2),
-              child: Text(
-                unit,
-                style: TextStyle(fontSize: 10, color: Colors.grey[400]),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNutritionItem(String label, String value, String unit, Color color) {
-    return Column(
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w500,
-            color: Colors.grey[500],
-          ),
-        ),
-        const SizedBox(height: 4),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: color,
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 2, left: 2),
-              child: Text(
-                unit,
-                style: TextStyle(fontSize: 10, color: Colors.grey[400]),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  void _showAlternatives(int mealIndex) {
-    if (!_canSwap) return;
-    final slot = _currentPlan?.meals[mealIndex];
-    if (slot == null || slot.alternatives.isEmpty) return;
-
-    final slotColors = _getSlotColor(slot.slot);
-
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.swap_horiz, color: slotColors, size: 22),
-                const SizedBox(width: 8),
-                Text(
-                  '${_capitalize(slot.slot)} Alternatives',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            ...List.generate(slot.alternatives.length, (altIndex) {
-              final alt = slot.alternatives[altIndex];
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () {
-                    _swapAlternative(mealIndex, altIndex);
-                    Navigator.pop(context);
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[50],
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey[200]!),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                alt.name,
-                                style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  _buildMiniChip('${alt.calories.toInt()} kcal',
-                                      Colors.orange),
-                                  const SizedBox(width: 6),
-                                  _buildMiniChip(
-                                      'P ${alt.proteinG.toInt()}g',
-                                      Colors.red[400]!),
-                                  const SizedBox(width: 6),
-                                  _buildMiniChip(
-                                      'C ${alt.carbsG.toInt()}g',
-                                      Colors.blue[400]!),
-                                  const SizedBox(width: 6),
-                                  _buildMiniChip(
-                                      'F ${alt.fatG.toInt()}g',
-                                      Colors.amber[600]!),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        Icon(Icons.chevron_right, color: Colors.grey[400]),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }),
-          ],
-        ),
+        canSwap: viewModel.canSwap,
+        onSwapAlternative: (mi, ai) {
+          viewModel.swapAlternative(mi, ai);
+        },
       ),
     );
   }
@@ -400,118 +79,126 @@ class _MealPlanTabState extends State<MealPlanTab> {
     ];
     final today = DateTime.now();
     final todayOnly = DateTime(today.year, today.month, today.day);
-    final selectedOnly = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
 
-    return Column(
-      children: [
-        // Scrollable date picker
-        Container(
-          height: 90,
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: ListView.builder(
-            controller: _dateScrollController,
-            scrollDirection: Axis.horizontal,
-            itemCount: _daysRange * 2 + 1, // days before + today + days after
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            itemBuilder: (context, index) {
-              final date = _getDateForIndex(index);
-              final isSelected = date.year == selectedOnly.year &&
-                  date.month == selectedOnly.month &&
-                  date.day == selectedOnly.day;
-              final isToday = date.year == todayOnly.year &&
-                  date.month == todayOnly.month &&
-                  date.day == todayOnly.day;
-              final dayName = dayNames[date.weekday - 1];
-              final hasPlan = _savedPlans.containsKey(_formatDate(date));
+    return ChangeNotifierProvider.value(
+      value: _viewModel,
+      child: Consumer<MealPlanViewModel>(
+        builder: (context, viewModel, child) {
+          final selectedOnly = DateTime(
+            viewModel.selectedDate.year,
+            viewModel.selectedDate.month,
+            viewModel.selectedDate.day,
+          );
 
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedDate = date;
-                  });
-                },
-                child: Container(
-                  width: 46,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  decoration: BoxDecoration(
-                    color: isSelected ? AppColors.primary : Colors.transparent,
-                    borderRadius: BorderRadius.circular(12),
-                    border: isToday && !isSelected
-                        ? Border.all(color: AppColors.primary, width: 2)
-                        : null,
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        dayName,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: isSelected ? Colors.white : Colors.grey[600],
+          return Column(
+            children: [
+              // Scrollable date picker
+              Container(
+                height: 90,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: ListView.builder(
+                  controller: _dateScrollController,
+                  scrollDirection: Axis.horizontal,
+                  itemCount: MealPlanViewModel.daysRange * 2 + 1,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  itemBuilder: (context, index) {
+                    final date = viewModel.getDateForIndex(index);
+                    final isSelected = date.year == selectedOnly.year &&
+                        date.month == selectedOnly.month &&
+                        date.day == selectedOnly.day;
+                    final isToday = date.year == todayOnly.year &&
+                        date.month == todayOnly.month &&
+                        date.day == todayOnly.day;
+                    final dayName = dayNames[date.weekday - 1];
+                    final hasPlan = viewModel.hasPlanForDate(date);
+
+                    return GestureDetector(
+                      onTap: () => viewModel.setSelectedDate(date),
+                      child: Container(
+                        width: 46,
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        decoration: BoxDecoration(
+                          color: isSelected ? AppColors.primary : Colors.transparent,
+                          borderRadius: BorderRadius.circular(12),
+                          border: isToday && !isSelected
+                              ? Border.all(color: AppColors.primary, width: 2)
+                              : null,
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              dayName,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: isSelected ? Colors.white : Colors.grey[600],
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${date.day}',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: isSelected
+                                    ? Colors.white
+                                    : AppColors.textPrimary,
+                              ),
+                            ),
+                            if (hasPlan && !isSelected)
+                              Container(
+                                margin: const EdgeInsets.only(top: 4),
+                                width: 6,
+                                height: 6,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${date.day}',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: isSelected
-                              ? Colors.white
-                              : AppColors.textPrimary,
-                        ),
-                      ),
-                      if (hasPlan && !isSelected)
-                        Container(
-                          margin: const EdgeInsets.only(top: 4),
-                          width: 6,
-                          height: 6,
-                          decoration: const BoxDecoration(
-                            color: AppColors.primary,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
-        ),
+              ),
 
-        // Content
-        Expanded(
-          child: _isLoading || _isLoadingSaved
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const CircularProgressIndicator(color: AppColors.primary),
-                      const SizedBox(height: 16),
-                      Text(
-                        _isLoadingSaved
-                            ? 'Loading your meal plans...'
-                            : 'Generating your meal plan...',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textSecondary,
+              // Content
+              Expanded(
+                child: viewModel.isGenerating || viewModel.isLoadingSaved
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const CircularProgressIndicator(color: AppColors.primary),
+                            const SizedBox(height: 16),
+                            Text(
+                              viewModel.isLoadingSaved
+                                  ? 'Loading your meal plans...'
+                                  : 'Generating your meal plan...',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
-                )
-              : _error != null
-                  ? _buildErrorState()
-                  : _currentPlan != null
-                      ? _buildMealPlanContent(fullDayNames, todayOnly)
-                      : _buildEmptyState(),
-        ),
-      ],
+                      )
+                    : viewModel.error != null
+                        ? _buildErrorState(viewModel)
+                        : viewModel.currentPlan != null
+                            ? _buildMealPlanContent(viewModel, fullDayNames, todayOnly)
+                            : _buildEmptyState(viewModel),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 
-  Widget _buildErrorState() {
+  Widget _buildErrorState(MealPlanViewModel viewModel) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -521,14 +208,14 @@ class _MealPlanTabState extends State<MealPlanTab> {
             Icon(Icons.error_outline, size: 48, color: Colors.red[300]),
             const SizedBox(height: 16),
             Text(
-              _error!,
+              viewModel.error!,
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 14, color: AppColors.textSecondary),
             ),
-            if (_canSwap) ...[
+            if (viewModel.canSwap) ...[
               const SizedBox(height: 24),
               ElevatedButton.icon(
-                onPressed: _generatePlan,
+                onPressed: viewModel.generatePlan,
                 icon: const Icon(Icons.refresh),
                 label: const Text('Retry'),
                 style: ElevatedButton.styleFrom(
@@ -546,8 +233,8 @@ class _MealPlanTabState extends State<MealPlanTab> {
     );
   }
 
-  Widget _buildEmptyState() {
-    final isPast = !_canSwap;
+  Widget _buildEmptyState(MealPlanViewModel viewModel) {
+    final isPast = !viewModel.canSwap;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -576,7 +263,7 @@ class _MealPlanTabState extends State<MealPlanTab> {
           if (!isPast) ...[
             const SizedBox(height: 24),
             ElevatedButton.icon(
-              onPressed: _generatePlan,
+              onPressed: viewModel.generatePlan,
               icon: const Icon(Icons.auto_awesome),
               label: const Text('Generate Meal Plan'),
               style: ElevatedButton.styleFrom(
@@ -594,24 +281,27 @@ class _MealPlanTabState extends State<MealPlanTab> {
     );
   }
 
-  Widget _buildMealPlanContent(List<String> fullDayNames, DateTime todayOnly) {
-    final plan = _currentPlan!;
-    final selectedOnly = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+  Widget _buildMealPlanContent(MealPlanViewModel viewModel, List<String> fullDayNames, DateTime todayOnly) {
+    final plan = viewModel.currentPlan!;
+    final selectedOnly = DateTime(
+      viewModel.selectedDate.year,
+      viewModel.selectedDate.month,
+      viewModel.selectedDate.day,
+    );
     final isToday = selectedOnly.year == todayOnly.year &&
         selectedOnly.month == todayOnly.month &&
         selectedOnly.day == todayOnly.day;
-    final dayName = fullDayNames[_selectedDate.weekday - 1];
+    final dayName = fullDayNames[viewModel.selectedDate.weekday - 1];
 
-    // Format the date nicely
     final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    final dateLabel = '${months[_selectedDate.month - 1]} ${_selectedDate.day}';
+    final dateLabel = '${months[viewModel.selectedDate.month - 1]} ${viewModel.selectedDate.day}';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header row: day name + calorie target
+          // Header row
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -634,8 +324,7 @@ class _MealPlanTabState extends State<MealPlanTab> {
                 ],
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
                   color: AppColors.primaryWithOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
@@ -660,23 +349,23 @@ class _MealPlanTabState extends State<MealPlanTab> {
           ),
           const SizedBox(height: 20),
 
-          // Daily totals summary
+          // Daily totals
           _buildDailyTotals(plan),
           const SizedBox(height: 20),
 
           // Meal cards
           ...List.generate(plan.meals.length, (index) {
-            return _buildMealCard(plan.meals[index], index);
+            return _buildMealCard(viewModel, plan.meals[index], index);
           }),
 
           const SizedBox(height: 12),
 
-          // Regenerate button (only for today or future)
-          if (_canSwap)
+          // Regenerate button
+          if (viewModel.canSwap)
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: _generatePlan,
+                onPressed: viewModel.generatePlan,
                 icon: const Icon(Icons.refresh, size: 18),
                 label: const Text('Regenerate Plan'),
                 style: OutlinedButton.styleFrom(
@@ -714,24 +403,19 @@ class _MealPlanTabState extends State<MealPlanTab> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildTotalItem(
-              'Calories', '${totals.calories.toInt()}', 'kcal', Colors.orange),
+          _buildTotalItem('Calories', '${totals.calories.toInt()}', 'kcal', Colors.orange),
           _buildTotalDivider(),
-          _buildTotalItem(
-              'Protein', '${totals.proteinG.toInt()}', 'g', Colors.red[400]!),
+          _buildTotalItem('Protein', '${totals.proteinG.toInt()}', 'g', Colors.red[400]!),
           _buildTotalDivider(),
-          _buildTotalItem(
-              'Carbs', '${totals.carbsG.toInt()}', 'g', Colors.blue[400]!),
+          _buildTotalItem('Carbs', '${totals.carbsG.toInt()}', 'g', Colors.blue[400]!),
           _buildTotalDivider(),
-          _buildTotalItem(
-              'Fat', '${totals.fatG.toInt()}', 'g', Colors.amber[600]!),
+          _buildTotalItem('Fat', '${totals.fatG.toInt()}', 'g', Colors.amber[600]!),
         ],
       ),
     );
   }
 
-  Widget _buildTotalItem(
-      String label, String value, String unit, Color color) {
+  Widget _buildTotalItem(String label, String value, String unit, Color color) {
     return Column(
       children: [
         Text(
@@ -775,7 +459,7 @@ class _MealPlanTabState extends State<MealPlanTab> {
     );
   }
 
-  Widget _buildMealCard(MealSlot slot, int mealIndex) {
+  Widget _buildMealCard(MealPlanViewModel viewModel, MealSlot slot, int mealIndex) {
     final recipe = slot.recipe;
     if (recipe == null) return const SizedBox.shrink();
 
@@ -784,7 +468,7 @@ class _MealPlanTabState extends State<MealPlanTab> {
     final time = _getSlotTime(slot.slot);
 
     return GestureDetector(
-      onTap: () => _showMealDetails(slot, mealIndex),
+      onTap: () => _showMealDetails(viewModel, slot, mealIndex),
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.all(16),
@@ -803,7 +487,6 @@ class _MealPlanTabState extends State<MealPlanTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top row: icon + meal type + time + calories
             Row(
               children: [
                 Container(
@@ -856,8 +539,7 @@ class _MealPlanTabState extends State<MealPlanTab> {
                   ),
                 ),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.grey[100],
                     borderRadius: BorderRadius.circular(8),
@@ -874,28 +556,21 @@ class _MealPlanTabState extends State<MealPlanTab> {
               ],
             ),
             const SizedBox(height: 12),
-
-            // Macro nutrients row
             Wrap(
               spacing: 8,
               runSpacing: 6,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                _buildMacroChip(
-                    'P', '${recipe.proteinG.toInt()}g', Colors.red[400]!),
-                _buildMacroChip(
-                    'C', '${recipe.carbsG.toInt()}g', Colors.blue[400]!),
-                _buildMacroChip(
-                    'F', '${recipe.fatG.toInt()}g', Colors.amber[600]!),
+                _buildMacroChip('P', '${recipe.proteinG.toInt()}g', Colors.red[400]!),
+                _buildMacroChip('C', '${recipe.carbsG.toInt()}g', Colors.blue[400]!),
+                _buildMacroChip('F', '${recipe.fatG.toInt()}g', Colors.amber[600]!),
                 if (recipe.totalTimeMinutes != null)
-                  _buildMacroChip(
-                      '', '${recipe.totalTimeMinutes} min', Colors.grey[500]!,
+                  _buildMacroChip('', '${recipe.totalTimeMinutes} min', Colors.grey[500]!,
                       icon: Icons.timer_outlined),
                 if (recipe.numIngredients != null && recipe.numIngredients! > 0)
-                  _buildMacroChip(
-                      '', '${recipe.numIngredients} ing', Colors.green[600]!,
+                  _buildMacroChip('', '${recipe.numIngredients} ing', Colors.green[600]!,
                       icon: Icons.shopping_basket_outlined),
-                if (slot.alternatives.isNotEmpty && _canSwap)
+                if (slot.alternatives.isNotEmpty && viewModel.canSwap)
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -918,8 +593,7 @@ class _MealPlanTabState extends State<MealPlanTab> {
     );
   }
 
-  Widget _buildMacroChip(String label, String value, Color color,
-      {IconData? icon}) {
+  Widget _buildMacroChip(String label, String value, Color color, {IconData? icon}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -955,66 +629,7 @@ class _MealPlanTabState extends State<MealPlanTab> {
     );
   }
 
-  Widget _buildMiniChip(String text, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-          color: color,
-        ),
-      ),
-    );
-  }
-
-  // Helpers
-
-  List<String> _parseIngredients(String ingredients) {
-    String cleaned = _cleanText(ingredients);
-    // Split by pipe character (|) to get individual ingredients
-    return cleaned
-        .split('|')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
-  }
-
-  String _cleanIngredients(String ingredients) {
-    final items = _parseIngredients(ingredients);
-    if (items.isEmpty) return '';
-    return items.map((e) => '• $e').join('\n');
-  }
-
-  String _cleanText(String text) {
-    String cleaned = text;
-    // Remove leading "c" if present (from Python representation)
-    if (cleaned.startsWith('c(') || cleaned.startsWith('c"') || cleaned.startsWith("c'")) {
-      cleaned = cleaned.substring(1);
-    }
-    // Remove surrounding quotes
-    cleaned = cleaned.replaceAll('"', '').replaceAll("'", '');
-    // Remove parentheses if wrapping the whole string
-    if (cleaned.startsWith('(') && cleaned.endsWith(')')) {
-      cleaned = cleaned.substring(1, cleaned.length - 1);
-    }
-    return cleaned.trim();
-  }
-
-  String _cleanInstructions(String instructions) {
-    String cleaned = _cleanText(instructions);
-    // After each period, start a new line and remove any comma that follows
-    cleaned = cleaned.replaceAllMapped(
-      RegExp(r'\.\s*,?\s*'),
-      (match) => '.\n\n',
-    );
-    return cleaned.trim();
-  }
+  // ── Helpers ───────────────────────────────────────────
 
   Color _getSlotColor(String slot) {
     switch (slot.toLowerCase()) {
@@ -1068,28 +683,20 @@ class _MealPlanTabState extends State<MealPlanTab> {
 }
 
 
-/// Stateful widget for meal details bottom sheet with favorite functionality
+/// Stateful widget for meal details bottom sheet with favorite functionality.
+/// Keeps local setState for ephemeral state (favorites/ratings) while
+/// using RecipeRepository for API calls.
 class _MealDetailsSheet extends StatefulWidget {
   final MealSlot slot;
   final int mealIndex;
   final bool canSwap;
   final void Function(int, int) onSwapAlternative;
-  final Color Function(String) getSlotColor;
-  final IconData Function(String) getSlotIcon;
-  final String Function(String) capitalize;
-  final String Function(String) cleanIngredients;
-  final String Function(String) cleanInstructions;
 
   const _MealDetailsSheet({
     required this.slot,
     required this.mealIndex,
     required this.canSwap,
     required this.onSwapAlternative,
-    required this.getSlotColor,
-    required this.getSlotIcon,
-    required this.capitalize,
-    required this.cleanIngredients,
-    required this.cleanInstructions,
   });
 
   @override
@@ -1097,6 +704,7 @@ class _MealDetailsSheet extends StatefulWidget {
 }
 
 class _MealDetailsSheetState extends State<_MealDetailsSheet> {
+  final RecipeRepository _recipeRepository = RecipeRepository();
   bool _isFavorite = false;
   bool _isLoadingFavorite = true;
   double? _userRating;
@@ -1112,10 +720,9 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
     final recipe = widget.slot.recipe;
     if (recipe == null) return;
 
-    // Load favorite status and rating in parallel
     final results = await Future.wait([
-      ApiService.isFavorite(recipeId: recipe.recipeId),
-      ApiService.getRecipeRating(recipeId: recipe.recipeId),
+      _recipeRepository.isFavorite(recipeId: recipe.recipeId),
+      _recipeRepository.getRecipeRating(recipeId: recipe.recipeId),
     ]);
 
     if (mounted) {
@@ -1136,16 +743,14 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
 
     bool success;
     if (_isFavorite) {
-      success = await ApiService.removeFavorite(recipeId: recipe.recipeId);
+      success = await _recipeRepository.removeFavorite(recipeId: recipe.recipeId);
     } else {
-      success = await ApiService.addFavorite(recipeId: recipe.recipeId);
+      success = await _recipeRepository.addFavorite(recipeId: recipe.recipeId);
     }
 
     if (mounted) {
       setState(() {
-        if (success) {
-          _isFavorite = !_isFavorite;
-        }
+        if (success) _isFavorite = !_isFavorite;
         _isLoadingFavorite = false;
       });
 
@@ -1167,7 +772,7 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
     final previousRating = _userRating;
     setState(() => _userRating = rating);
 
-    final success = await ApiService.rateRecipe(recipeId: recipe.recipeId, rating: rating);
+    final success = await _recipeRepository.rateRecipe(recipeId: recipe.recipeId, rating: rating);
 
     if (!success && mounted) {
       setState(() => _userRating = previousRating);
@@ -1206,33 +811,16 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
   Widget _buildNutritionItem(String label, String value, String unit, Color color) {
     return Column(
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w500,
-            color: Colors.grey[500],
-          ),
-        ),
+        Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Colors.grey[500])),
         const SizedBox(height: 4),
         Row(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: color,
-              ),
-            ),
+            Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: color)),
             Padding(
               padding: const EdgeInsets.only(bottom: 2, left: 2),
-              child: Text(
-                unit,
-                style: TextStyle(fontSize: 10, color: Colors.grey[400]),
-              ),
+              child: Text(unit, style: TextStyle(fontSize: 10, color: Colors.grey[400])),
             ),
           ],
         ),
@@ -1247,22 +835,40 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
         color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(4),
       ),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-          color: color,
-        ),
-      ),
+      child: Text(text, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: color)),
     );
+  }
+
+  Color _getSlotColor(String slot) {
+    switch (slot.toLowerCase()) {
+      case 'breakfast': return const Color(0xFFFFB347);
+      case 'lunch': return const Color(0xFF4CAF50);
+      case 'snack': return const Color(0xFF9C27B0);
+      case 'dinner': return const Color(0xFF2196F3);
+      default: return AppColors.primary;
+    }
+  }
+
+  IconData _getSlotIcon(String slot) {
+    switch (slot.toLowerCase()) {
+      case 'breakfast': return Icons.wb_sunny_outlined;
+      case 'lunch': return Icons.light_mode_outlined;
+      case 'snack': return Icons.coffee_outlined;
+      case 'dinner': return Icons.nights_stay_outlined;
+      default: return Icons.restaurant;
+    }
+  }
+
+  String _capitalize(String s) {
+    if (s.isEmpty) return s;
+    return s[0].toUpperCase() + s.substring(1);
   }
 
   @override
   Widget build(BuildContext context) {
     final recipe = widget.slot.recipe!;
-    final color = widget.getSlotColor(widget.slot.slot);
-    final icon = widget.getSlotIcon(widget.slot.slot);
+    final color = _getSlotColor(widget.slot.slot);
+    final icon = _getSlotIcon(widget.slot.slot);
 
     return DraggableScrollableSheet(
       initialChildSize: 0.85,
@@ -1278,52 +884,32 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
             // Handle bar
             Center(
               child: Container(
-                width: 40,
-                height: 4,
+                width: 40, height: 4,
                 margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
+                decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
               ),
             ),
 
-            // Header: meal type + icon + favorite button
+            // Header
             Row(
               children: [
                 Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  width: 48, height: 48,
+                  decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(12)),
                   child: Icon(icon, color: color, size: 24),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    widget.capitalize(widget.slot.slot),
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: color,
-                    ),
-                  ),
+                  child: Text(_capitalize(widget.slot.slot),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: color)),
                 ),
-                // Favorite button
                 IconButton(
                   onPressed: _isLoadingFavorite ? null : _toggleFavorite,
                   icon: _isLoadingFavorite
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
+                      ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
                       : Icon(
                           _isFavorite ? Icons.favorite : Icons.favorite_border,
-                          color: _isFavorite ? Colors.red : Colors.grey[400],
-                          size: 28,
+                          color: _isFavorite ? Colors.red : Colors.grey[400], size: 28,
                         ),
                 ),
               ],
@@ -1331,201 +917,117 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
             const SizedBox(height: 16),
 
             // Recipe name
-            Text(
-              recipe.name,
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
-              ),
-            ),
+            Text(recipe.name, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
             const SizedBox(height: 12),
 
             // Star rating
             Row(
               children: [
-                Text(
-                  'Your rating:',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
+                Text('Your rating:', style: TextStyle(fontSize: 14, color: Colors.grey[600], fontWeight: FontWeight.w500)),
                 const SizedBox(width: 12),
                 _isLoadingRating
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
+                    ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
                     : _buildStarRating(),
               ],
             ),
             const SizedBox(height: 16),
 
-            // Nutrition info row
+            // Nutrition info
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(12),
+                color: Colors.grey[50], borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.grey[200]!),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _buildNutritionItem(
-                      'Calories', '${recipe.calories.toInt()}', 'kcal', Colors.orange),
-                  _buildNutritionItem(
-                      'Protein', '${recipe.proteinG.toInt()}', 'g', Colors.red[400]!),
-                  _buildNutritionItem(
-                      'Carbs', '${recipe.carbsG.toInt()}', 'g', Colors.blue[400]!),
-                  _buildNutritionItem(
-                      'Fat', '${recipe.fatG.toInt()}', 'g', Colors.amber[600]!),
+                  _buildNutritionItem('Calories', '${recipe.calories.toInt()}', 'kcal', Colors.orange),
+                  _buildNutritionItem('Protein', '${recipe.proteinG.toInt()}', 'g', Colors.red[400]!),
+                  _buildNutritionItem('Carbs', '${recipe.carbsG.toInt()}', 'g', Colors.blue[400]!),
+                  _buildNutritionItem('Fat', '${recipe.fatG.toInt()}', 'g', Colors.amber[600]!),
                 ],
               ),
             ),
             const SizedBox(height: 20),
 
-            // Cook time if available
+            // Cook time
             if (recipe.totalTimeMinutes != null) ...[
-              Row(
-                children: [
-                  Icon(Icons.timer_outlined, size: 20, color: Colors.grey[600]),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${recipe.totalTimeMinutes} minutes',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[700],
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
+              Row(children: [
+                Icon(Icons.timer_outlined, size: 20, color: Colors.grey[600]),
+                const SizedBox(width: 8),
+                Text('${recipe.totalTimeMinutes} minutes',
+                  style: TextStyle(fontSize: 14, color: Colors.grey[700], fontWeight: FontWeight.w500)),
+              ]),
               const SizedBox(height: 20),
             ],
 
-            // Category if available
+            // Category
             if (recipe.category != null && recipe.category!.isNotEmpty) ...[
-              Row(
-                children: [
-                  Icon(Icons.category_outlined, size: 20, color: Colors.grey[600]),
-                  const SizedBox(width: 8),
-                  Text(
-                    recipe.category!,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[700],
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
+              Row(children: [
+                Icon(Icons.category_outlined, size: 20, color: Colors.grey[600]),
+                const SizedBox(width: 8),
+                Text(recipe.category!,
+                  style: TextStyle(fontSize: 14, color: Colors.grey[700], fontWeight: FontWeight.w500)),
+              ]),
               const SizedBox(height: 20),
             ],
 
-            // Ingredients section
+            // Ingredients
             if (recipe.ingredients != null && recipe.ingredients!.isNotEmpty) ...[
-              Row(
-                children: [
-                  const Text(
-                    'Ingredients',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  if (recipe.numIngredients != null && recipe.numIngredients! > 0) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.green[50],
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        '${recipe.numIngredients}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.green[700],
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.grey[50],
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[200]!),
-                ),
-                child: Text(
-                  widget.cleanIngredients(recipe.ingredients!),
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[700],
-                    height: 1.6,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-            ],
-
-            // Instructions section
-            if (recipe.instructions != null && recipe.instructions!.isNotEmpty) ...[
-              const Text(
-                'Instructions',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.grey[50],
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[200]!),
-                ),
-                child: Text(
-                  widget.cleanInstructions(recipe.instructions!),
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[700],
-                    height: 1.6,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-            ],
-
-            // Alternatives section
-            if (widget.slot.alternatives.isNotEmpty && widget.canSwap) ...[
-              Row(
-                children: [
-                  Icon(Icons.swap_horiz, color: color, size: 22),
+              Row(children: [
+                const Text('Ingredients', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                if (recipe.numIngredients != null && recipe.numIngredients! > 0) ...[
                   const SizedBox(width: 8),
-                  const Text(
-                    'Change to Alternative',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
-                    ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(color: Colors.green[50], borderRadius: BorderRadius.circular(10)),
+                    child: Text('${recipe.numIngredients}',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.green[700])),
                   ),
                 ],
+              ]),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity, padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50], borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[200]!),
+                ),
+                child: Text(
+                  TextHelpers.cleanIngredients(recipe.ingredients!),
+                  style: TextStyle(fontSize: 14, color: Colors.grey[700], height: 1.6),
+                ),
               ),
+              const SizedBox(height: 20),
+            ],
+
+            // Instructions
+            if (recipe.instructions != null && recipe.instructions!.isNotEmpty) ...[
+              const Text('Instructions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity, padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50], borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[200]!),
+                ),
+                child: Text(
+                  TextHelpers.cleanInstructions(recipe.instructions!),
+                  style: TextStyle(fontSize: 14, color: Colors.grey[700], height: 1.6),
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+
+            // Alternatives
+            if (widget.slot.alternatives.isNotEmpty && widget.canSwap) ...[
+              Row(children: [
+                Icon(Icons.swap_horiz, color: color, size: 22),
+                const SizedBox(width: 8),
+                const Text('Change to Alternative',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+              ]),
               const SizedBox(height: 12),
               ...List.generate(widget.slot.alternatives.length, (altIndex) {
                 final alt = widget.slot.alternatives[altIndex];
@@ -1540,8 +1042,7 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
                     child: Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
+                        color: Colors.white, borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: color.withValues(alpha: 0.3)),
                       ),
                       child: Row(
@@ -1550,25 +1051,17 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  alt.name,
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
+                                Text(alt.name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                                 const SizedBox(height: 6),
-                                Row(
-                                  children: [
-                                    _buildMiniChip('${alt.calories.toInt()} kcal', Colors.orange),
-                                    const SizedBox(width: 6),
-                                    _buildMiniChip('P ${alt.proteinG.toInt()}g', Colors.red[400]!),
-                                    const SizedBox(width: 6),
-                                    _buildMiniChip('C ${alt.carbsG.toInt()}g', Colors.blue[400]!),
-                                    const SizedBox(width: 6),
-                                    _buildMiniChip('F ${alt.fatG.toInt()}g', Colors.amber[600]!),
-                                  ],
-                                ),
+                                Row(children: [
+                                  _buildMiniChip('${alt.calories.toInt()} kcal', Colors.orange),
+                                  const SizedBox(width: 6),
+                                  _buildMiniChip('P ${alt.proteinG.toInt()}g', Colors.red[400]!),
+                                  const SizedBox(width: 6),
+                                  _buildMiniChip('C ${alt.carbsG.toInt()}g', Colors.blue[400]!),
+                                  const SizedBox(width: 6),
+                                  _buildMiniChip('F ${alt.fatG.toInt()}g', Colors.amber[600]!),
+                                ]),
                               ],
                             ),
                           ),

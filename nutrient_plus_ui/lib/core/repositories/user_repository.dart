@@ -27,6 +27,11 @@ class UserRepository {
     String? profileImagePath,
     double? height,
     int? age,
+    String? activityLevel,
+    String? goalType,
+    int? preferredMealsPerDay,
+    int? maxCookTime,
+    bool clearMaxCookTime = false,
   }) async {
     final result = await ApiService.updateProfile(
       currentWeight: currentWeight,
@@ -35,6 +40,11 @@ class UserRepository {
       profileImagePath: profileImagePath,
       height: height,
       age: age,
+      activityLevel: activityLevel,
+      goalType: goalType,
+      preferredMealsPerDay: preferredMealsPerDay,
+      maxCookTime: maxCookTime,
+      clearMaxCookTime: clearMaxCookTime,
     );
 
     if (result.success && result.user != null) {

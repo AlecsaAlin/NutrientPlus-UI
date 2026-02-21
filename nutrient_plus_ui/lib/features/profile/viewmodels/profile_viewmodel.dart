@@ -105,4 +105,55 @@ class ProfileViewModel extends BaseViewModel {
       notifyListeners();
     }
   }
+
+  /// Update activity level
+  Future<void> updateActivityLevel(String activityLevel) async {
+    _user = _user?.copyWith(activityLevel: activityLevel);
+    notifyListeners();
+
+    final result = await _userRepository.updateProfile(activityLevel: activityLevel);
+    if (result.success && result.user != null) {
+      _user = result.user;
+      notifyListeners();
+    }
+  }
+
+  /// Update goal type
+  Future<void> updateGoalType(String goalType) async {
+    _user = _user?.copyWith(goalType: goalType);
+    notifyListeners();
+
+    final result = await _userRepository.updateProfile(goalType: goalType);
+    if (result.success && result.user != null) {
+      _user = result.user;
+      notifyListeners();
+    }
+  }
+
+  /// Update preferred meals per day
+  Future<void> updatePreferredMealsPerDay(int meals) async {
+    _user = _user?.copyWith(preferredMealsPerDay: meals);
+    notifyListeners();
+
+    final result = await _userRepository.updateProfile(preferredMealsPerDay: meals);
+    if (result.success && result.user != null) {
+      _user = result.user;
+      notifyListeners();
+    }
+  }
+
+  /// Update max cook time
+  Future<void> updateMaxCookTime(int? maxCookTime, {bool clear = false}) async {
+    _user = _user?.copyWith(maxCookTime: maxCookTime);
+    notifyListeners();
+
+    final result = await _userRepository.updateProfile(
+      maxCookTime: maxCookTime,
+      clearMaxCookTime: clear,
+    );
+    if (result.success && result.user != null) {
+      _user = result.user;
+      notifyListeners();
+    }
+  }
 }

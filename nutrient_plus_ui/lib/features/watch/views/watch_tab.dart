@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:health/health.dart';
+import 'package:provider/provider.dart';
+import '../viewmodels/watch_viewmodel.dart';
 
 class WatchTab extends StatefulWidget {
   const WatchTab({super.key});
@@ -9,256 +10,29 @@ class WatchTab extends StatefulWidget {
 }
 
 class _WatchTabState extends State<WatchTab> {
-  final Health _health = Health();
-
-  bool _isLoading = true;
-  bool _isAuthorized = false;
-
-  // Selected day index (0 = today, 1 = yesterday, etc.)
-  int _selectedDayIndex = 0;
-  
-  // Health data
-  int _steps = 0;
-  double _caloriesBurned = 0;
-  double _sleepHours = 0;
-  
-  // Weekly data for chart
-  List<int> _weeklySteps = [0, 0, 0, 0, 0, 0, 0];
-  List<double> _weeklyCalories = [0, 0, 0, 0, 0, 0, 0];
-
-  // Health types to read
-  static final List<HealthDataType> _types = [
-    HealthDataType.STEPS,
-    HealthDataType.ACTIVE_ENERGY_BURNED,
-    HealthDataType.SLEEP_ASLEEP,
-    HealthDataType.SLEEP_LIGHT,
-    HealthDataType.SLEEP_DEEP,
-    HealthDataType.SLEEP_REM,
-  ];
+  late WatchViewModel _viewModel;
 
   @override
   void initState() {
     super.initState();
-    _initHealth();
+    _viewModel = WatchViewModel();
+    _viewModel.initHealth();
   }
 
-  Future<void> _initHealth() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      await _health.configure();
-      await _fetchHealthData();
-      await _fetchWeeklyData();
-      
-      setState(() {
-        _isAuthorized = true;
-        _isLoading = false;
-      });
-      
-    } catch (e) {
-      print('Health init error: $e');
-      setState(() {
-        _isAuthorized = false;
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _requestPermissions() async {
-    setState(() {
-      _isLoading = true;
-    });
-    
-    try {
-      bool authorized = await _health.requestAuthorization(
-        _types,
-        permissions: _types.map((e) => HealthDataAccess.READ).toList(),
-      );
-      
-      if (authorized) {
-        setState(() {
-          _isAuthorized = true;
-        });
-        await _fetchHealthData();
-        await _fetchWeeklyData();
-      }
-    } catch (e) {
-      print('Permission request error: $e');
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _openHealthConnect() async {
-    try {
-      await _health.installHealthConnect();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please open Health Connect manually from Settings'),
-            duration: Duration(seconds: 4),
-          ),
-        );
-      }
-    }
-  }
-
-  DateTime _getSelectedDate() {
-    return DateTime.now().subtract(Duration(days: _selectedDayIndex));
-  }
-
-  Future<void> _fetchHealthData() async {
-    final selectedDate = _getSelectedDate();
-    final startOfDay = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
-    final endOfDay = _selectedDayIndex == 0 
-        ? DateTime.now() 
-        : DateTime(selectedDate.year, selectedDate.month, selectedDate.day, 23, 59, 59);
-    
-    final sleepStart = startOfDay.subtract(const Duration(hours: 12));
-
-    try {
-      List<HealthDataPoint> healthData = await _health.getHealthDataFromTypes(
-        types: [
-          HealthDataType.STEPS,
-          HealthDataType.ACTIVE_ENERGY_BURNED,
-        ],
-        startTime: startOfDay,
-        endTime: endOfDay,
-      );
-      
-      List<HealthDataPoint> sleepData = [];
-      try {
-        sleepData = await _health.getHealthDataFromTypes(
-          types: [
-            HealthDataType.SLEEP_ASLEEP,
-            HealthDataType.SLEEP_LIGHT,
-            HealthDataType.SLEEP_DEEP,
-            HealthDataType.SLEEP_REM,
-          ],
-          startTime: sleepStart,
-          endTime: endOfDay,
-        );
-      } catch (e) {
-        print('Sleep fetch error: $e');
-      }
-
-      int steps = 0;
-      double calories = 0;
-      double sleepMinutes = 0;
-
-      healthData = _health.removeDuplicates(healthData);
-
-      // Group steps by source app to avoid double-counting from multiple apps
-      Map<String, int> stepsBySource = {};
-      for (var point in healthData) {
-        if (point.type == HealthDataType.STEPS) {
-          final source = point.sourceName;
-          final value = (point.value as NumericHealthValue).numericValue.toInt();
-          stepsBySource[source] = (stepsBySource[source] ?? 0) + value;
-        } else if (point.type == HealthDataType.ACTIVE_ENERGY_BURNED) {
-          calories += (point.value as NumericHealthValue).numericValue.toDouble();
-        }
-      }
-
-      // Take the maximum from any single source
-      if (stepsBySource.isNotEmpty) {
-        steps = stepsBySource.values.reduce((a, b) => a > b ? a : b);
-      }
-      
-      Set<String> processedSleepSessions = {};
-      for (var point in sleepData) {
-        final key = '${point.dateFrom.toIso8601String()}-${point.dateTo.toIso8601String()}';
-        if (point.type == HealthDataType.SLEEP_ASLEEP ||
-            point.type == HealthDataType.SLEEP_LIGHT ||
-            point.type == HealthDataType.SLEEP_DEEP ||
-            point.type == HealthDataType.SLEEP_REM) {
-          if (!processedSleepSessions.contains(key)) {
-            processedSleepSessions.add(key);
-            final duration = point.dateTo.difference(point.dateFrom);
-            sleepMinutes += duration.inMinutes;
-          }
-        }
-      }
-
-      setState(() {
-        _steps = steps;
-        _caloriesBurned = calories;
-        _sleepHours = sleepMinutes / 60;
-      });
-    } catch (e) {
-      print('Fetch error: $e');
-    }
-  }
-
-  Future<void> _fetchWeeklyData() async {
-    final now = DateTime.now();
-    final sevenDaysAgo = DateTime(now.year, now.month, now.day - 6);
-    
-    // Initialize with zeros
-    List<int> weeklySteps = List.filled(7, 0);
-    List<double> weeklyCalories = List.filled(7, 0);
-    
-    try {
-      // Single request for all 7 days of data
-      List<HealthDataPoint> data = await _health.getHealthDataFromTypes(
-        types: [HealthDataType.STEPS, HealthDataType.ACTIVE_ENERGY_BURNED],
-        startTime: sevenDaysAgo,
-        endTime: now,
-      );
-
-      data = _health.removeDuplicates(data);
-
-      // Group steps by day and source to avoid double-counting
-      Map<int, Map<String, int>> stepsByDayAndSource = {};
-
-      for (var point in data) {
-        final daysDiff = now.difference(DateTime(point.dateFrom.year, point.dateFrom.month, point.dateFrom.day)).inDays;
-        final dayIndex = 6 - daysDiff;
-
-        if (dayIndex >= 0 && dayIndex < 7) {
-          if (point.type == HealthDataType.STEPS) {
-            final source = point.sourceName;
-            stepsByDayAndSource[dayIndex] ??= {};
-            stepsByDayAndSource[dayIndex]![source] =
-                (stepsByDayAndSource[dayIndex]![source] ?? 0) +
-                (point.value as NumericHealthValue).numericValue.toInt();
-          } else if (point.type == HealthDataType.ACTIVE_ENERGY_BURNED) {
-            weeklyCalories[dayIndex] += (point.value as NumericHealthValue).numericValue.toDouble();
-          }
-        }
-      }
-
-      // For each day, take the max from any single source
-      for (int i = 0; i < 7; i++) {
-        if (stepsByDayAndSource.containsKey(i) && stepsByDayAndSource[i]!.isNotEmpty) {
-          weeklySteps[i] = stepsByDayAndSource[i]!.values.reduce((a, b) => a > b ? a : b);
-        }
-      }
-    } catch (e) {
-      print('Weekly data fetch error: $e');
-    }
-    
-    setState(() {
-      _weeklySteps = weeklySteps;
-      _weeklyCalories = weeklyCalories;
-    });
+  @override
+  void dispose() {
+    _viewModel.dispose();
+    super.dispose();
   }
 
   String _formatSleepDuration(double hours) {
     if (hours <= 0) return '--';
-    
     final totalMinutes = (hours * 60).round();
     final h = totalMinutes ~/ 60;
     final m = totalMinutes % 60;
-    
     return '${h}h ${m}m';
   }
-  
+
   String _formatSteps(int steps) {
     return steps.toString().replaceAllMapped(
       RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
@@ -266,71 +40,73 @@ class _WatchTabState extends State<WatchTab> {
     );
   }
 
+  String _getMonthAbbr(int month) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return months[month - 1];
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(color: Color(0xFF2D5016)),
-            SizedBox(height: 16),
-            Text('Loading health data...'),
-          ],
-        ),
-      );
-    }
+    return ChangeNotifierProvider.value(
+      value: _viewModel,
+      child: Consumer<WatchViewModel>(
+        builder: (context, viewModel, child) {
+          if (viewModel.isLoading) {
+            return const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF2D5016)),
+                  SizedBox(height: 16),
+                  Text('Loading health data...'),
+                ],
+              ),
+            );
+          }
 
-    if (!_isAuthorized) {
-      return _buildPermissionScreen();
-    }
+          if (!viewModel.isAuthorized) {
+            return _buildPermissionScreen(viewModel);
+          }
 
-    return RefreshIndicator(
-      onRefresh: () async {
-        await _fetchHealthData();
-        await _fetchWeeklyData();
-      },
-      color: const Color(0xFF2D5016),
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: Column(
-          children: [
-            // Date Scroller
-            _buildDateScroller(),
-            
-            Padding(
-              padding: const EdgeInsets.all(16),
+          return RefreshIndicator(
+            onRefresh: () async {
+              await viewModel.fetchHealthData();
+              await viewModel.fetchWeeklyData();
+            },
+            color: const Color(0xFF2D5016),
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
               child: Column(
                 children: [
-                  // Insight Pill
-                  _buildInsightPill(),
-                  const SizedBox(height: 20),
-                  
-                  // Activity Stats Grid
-                  _buildActivityGrid(),
-                  const SizedBox(height: 16),
-                  
-                  // Weekly Steps Chart
-                  _buildWeeklyChart(),
-                  const SizedBox(height: 16),
-                  
-                  // Weekly Calories Chart
-                  _buildWeeklyCaloriesChart(),
-                  const SizedBox(height: 16),
-                  
-                  // Sleep Card
-                  _buildSleepCard(),
-                  const SizedBox(height: 80),
+                  _buildDateScroller(viewModel),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        _buildInsightPill(viewModel),
+                        const SizedBox(height: 20),
+                        _buildActivityGrid(viewModel),
+                        const SizedBox(height: 16),
+                        _buildWeeklyChart(viewModel),
+                        const SizedBox(height: 16),
+                        _buildWeeklyCaloriesChart(viewModel),
+                        const SizedBox(height: 16),
+                        _buildSleepCard(viewModel),
+                        const SizedBox(height: 80),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildPermissionScreen() {
+  Widget _buildPermissionScreen(WatchViewModel viewModel) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -367,9 +143,8 @@ class _WatchTabState extends State<WatchTab> {
               ),
             ),
             const SizedBox(height: 32),
-            
             ElevatedButton(
-              onPressed: _requestPermissions,
+              onPressed: () => viewModel.requestPermissions(),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF2D5016),
                 foregroundColor: Colors.white,
@@ -387,11 +162,19 @@ class _WatchTabState extends State<WatchTab> {
                 ],
               ),
             ),
-            
             const SizedBox(height: 16),
-            
             TextButton(
-              onPressed: _openHealthConnect,
+              onPressed: () async {
+                final success = await viewModel.openHealthConnect();
+                if (!success && mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please open Health Connect manually from Settings'),
+                      duration: Duration(seconds: 4),
+                    ),
+                  );
+                }
+              },
               child: const Text(
                 'Open Health Connect Settings',
                 style: TextStyle(color: Color(0xFF2D5016)),
@@ -403,9 +186,9 @@ class _WatchTabState extends State<WatchTab> {
     );
   }
 
-  Widget _buildDateScroller() {
+  Widget _buildDateScroller(WatchViewModel viewModel) {
     final now = DateTime.now();
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: SingleChildScrollView(
@@ -416,9 +199,9 @@ class _WatchTabState extends State<WatchTab> {
           children: List.generate(30, (index) {
             final reversedIndex = 29 - index;
             final date = now.subtract(Duration(days: reversedIndex));
-            final isSelected = reversedIndex == _selectedDayIndex;
+            final isSelected = reversedIndex == viewModel.selectedDayIndex;
             final isToday = reversedIndex == 0;
-            
+
             String dayName;
             if (isToday) {
               dayName = 'Today';
@@ -428,16 +211,11 @@ class _WatchTabState extends State<WatchTab> {
               final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
               dayName = days[date.weekday - 1];
             }
-            
+
             return Padding(
               padding: const EdgeInsets.only(right: 8),
               child: GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedDayIndex = reversedIndex;
-                  });
-                  _fetchHealthData();
-                },
+                onTap: () => viewModel.setSelectedDayIndex(reversedIndex),
                 child: Container(
                   width: 56,
                   height: 72,
@@ -492,28 +270,22 @@ class _WatchTabState extends State<WatchTab> {
     );
   }
 
-  String _getMonthAbbr(int month) {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return months[month - 1];
-  }
-
-  Widget _buildInsightPill() {
-    final stepsPercent = (_steps / 10000 * 100).clamp(0, 100).toInt();
+  Widget _buildInsightPill(WatchViewModel viewModel) {
+    final stepsPercent = (viewModel.steps / 10000 * 100).clamp(0, 100).toInt();
     String message;
     IconData icon;
-    
+
     if (stepsPercent >= 100) {
       message = 'Goal achieved! You\'ve reached 10,000 steps';
       icon = Icons.emoji_events;
     } else if (stepsPercent >= 75) {
-      message = 'Great progress! ${_formatSteps(10000 - _steps)} steps to go';
+      message = 'Great progress! ${_formatSteps(10000 - viewModel.steps)} steps to go';
       icon = Icons.local_fire_department;
     } else if (stepsPercent >= 50) {
       message = 'Keep moving! You\'re halfway there';
       icon = Icons.directions_walk;
     } else {
-      message = 'Let\'s get moving! ${_formatSteps(10000 - _steps)} steps to goal';
+      message = 'Let\'s get moving! ${_formatSteps(10000 - viewModel.steps)} steps to goal';
       icon = Icons.fitness_center;
     }
 
@@ -559,7 +331,7 @@ class _WatchTabState extends State<WatchTab> {
     );
   }
 
-  Widget _buildActivityGrid() {
+  Widget _buildActivityGrid(WatchViewModel viewModel) {
     return Row(
       children: [
         // Steps Card
@@ -601,7 +373,7 @@ class _WatchTabState extends State<WatchTab> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        '${((_steps / 10000) * 100).clamp(0, 100).toInt()}%',
+                        '${((viewModel.steps / 10000) * 100).clamp(0, 100).toInt()}%',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
@@ -615,7 +387,7 @@ class _WatchTabState extends State<WatchTab> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _formatSteps(_steps),
+                      _formatSteps(viewModel.steps),
                       style: const TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
@@ -633,7 +405,7 @@ class _WatchTabState extends State<WatchTab> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(
-                    value: (_steps / 10000).clamp(0.0, 1.0),
+                    value: (viewModel.steps / 10000).clamp(0.0, 1.0),
                     backgroundColor: Colors.grey[100],
                     valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[500]!),
                     minHeight: 6,
@@ -703,7 +475,7 @@ class _WatchTabState extends State<WatchTab> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _caloriesBurned.toStringAsFixed(0),
+                      viewModel.caloriesBurned.toStringAsFixed(0),
                       style: const TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
@@ -721,7 +493,7 @@ class _WatchTabState extends State<WatchTab> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(
-                    value: (_caloriesBurned / 2000).clamp(0.0, 1.0),
+                    value: (viewModel.caloriesBurned / 2000).clamp(0.0, 1.0),
                     backgroundColor: Colors.grey[100],
                     valueColor: AlwaysStoppedAnimation<Color>(Colors.orange[500]!),
                     minHeight: 6,
@@ -735,12 +507,12 @@ class _WatchTabState extends State<WatchTab> {
     );
   }
 
-  Widget _buildWeeklyChart() {
+  Widget _buildWeeklyChart(WatchViewModel viewModel) {
     final now = DateTime.now();
-    final maxSteps = _weeklySteps.isEmpty ? 0 : _weeklySteps.reduce((a, b) => a > b ? a : b);
-    final totalSteps = _weeklySteps.isEmpty ? 0 : _weeklySteps.reduce((a, b) => a + b);
-    final avgSteps = _weeklySteps.isEmpty ? 0 : (totalSteps / 7).round();
-    
+    final maxSteps = viewModel.weeklySteps.isEmpty ? 0 : viewModel.weeklySteps.reduce((a, b) => a > b ? a : b);
+    final totalSteps = viewModel.weeklySteps.isEmpty ? 0 : viewModel.weeklySteps.reduce((a, b) => a + b);
+    final avgSteps = viewModel.weeklySteps.isEmpty ? 0 : (totalSteps / 7).round();
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -795,25 +567,23 @@ class _WatchTabState extends State<WatchTab> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: List.generate(7, (index) {
-              final steps = _weeklySteps.length > index ? _weeklySteps[index] : 0;
-              final barHeight = maxSteps > 0 
+              final steps = viewModel.weeklySteps.length > index ? viewModel.weeklySteps[index] : 0;
+              final barHeight = maxSteps > 0
                   ? (steps / maxSteps * 60).clamp(4.0, 60.0)
                   : 4.0;
               final isToday = index == 6;
-              
-              // Get day label for this bar
+
               final date = now.subtract(Duration(days: 6 - index));
               final dayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
               final dayLabel = dayLabels[date.weekday - 1];
-              
-              // Format steps for display
+
               String stepsLabel;
               if (steps >= 1000) {
                 stepsLabel = '${(steps / 1000).toStringAsFixed(1)}k';
               } else {
                 stepsLabel = '$steps';
               }
-              
+
               return Expanded(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -833,8 +603,8 @@ class _WatchTabState extends State<WatchTab> {
                         width: double.infinity,
                         height: barHeight,
                         decoration: BoxDecoration(
-                          color: isToday 
-                              ? const Color(0xFF2D5016) 
+                          color: isToday
+                              ? const Color(0xFF2D5016)
                               : const Color(0xFF2D5016).withValues(alpha: 0.35),
                           borderRadius: BorderRadius.circular(6),
                           boxShadow: isToday ? [
@@ -866,12 +636,12 @@ class _WatchTabState extends State<WatchTab> {
     );
   }
 
-  Widget _buildWeeklyCaloriesChart() {
+  Widget _buildWeeklyCaloriesChart(WatchViewModel viewModel) {
     final now = DateTime.now();
-    final maxCalories = _weeklyCalories.isEmpty ? 0.0 : _weeklyCalories.reduce((a, b) => a > b ? a : b);
-    final totalCalories = _weeklyCalories.isEmpty ? 0.0 : _weeklyCalories.reduce((a, b) => a + b);
-    final avgCalories = _weeklyCalories.isEmpty ? 0 : (totalCalories / 7).round();
-    
+    final maxCalories = viewModel.weeklyCalories.isEmpty ? 0.0 : viewModel.weeklyCalories.reduce((a, b) => a > b ? a : b);
+    final totalCalories = viewModel.weeklyCalories.isEmpty ? 0.0 : viewModel.weeklyCalories.reduce((a, b) => a + b);
+    final avgCalories = viewModel.weeklyCalories.isEmpty ? 0 : (totalCalories / 7).round();
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -926,20 +696,18 @@ class _WatchTabState extends State<WatchTab> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: List.generate(7, (index) {
-              final calories = _weeklyCalories.length > index ? _weeklyCalories[index] : 0.0;
-              final barHeight = maxCalories > 0 
+              final calories = viewModel.weeklyCalories.length > index ? viewModel.weeklyCalories[index] : 0.0;
+              final barHeight = maxCalories > 0
                   ? (calories / maxCalories * 60).clamp(4.0, 60.0)
                   : 4.0;
               final isToday = index == 6;
-              
-              // Get day label for this bar
+
               final date = now.subtract(Duration(days: 6 - index));
               final dayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
               final dayLabel = dayLabels[date.weekday - 1];
-              
-              // Format calories for display
+
               String caloriesLabel = calories.toStringAsFixed(0);
-              
+
               return Expanded(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -959,8 +727,8 @@ class _WatchTabState extends State<WatchTab> {
                         width: double.infinity,
                         height: barHeight,
                         decoration: BoxDecoration(
-                          color: isToday 
-                              ? Colors.orange[500] 
+                          color: isToday
+                              ? Colors.orange[500]
                               : Colors.orange[500]!.withValues(alpha: 0.35),
                           borderRadius: BorderRadius.circular(6),
                           boxShadow: isToday ? [
@@ -992,7 +760,7 @@ class _WatchTabState extends State<WatchTab> {
     );
   }
 
-  Widget _buildSleepCard() {
+  Widget _buildSleepCard(WatchViewModel viewModel) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -1044,7 +812,7 @@ class _WatchTabState extends State<WatchTab> {
                 ],
               ),
               Text(
-                _formatSleepDuration(_sleepHours),
+                _formatSleepDuration(viewModel.sleepHours),
                 style: const TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
@@ -1053,7 +821,6 @@ class _WatchTabState extends State<WatchTab> {
             ],
           ),
           const SizedBox(height: 16),
-          // Sleep stages bar
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: Row(

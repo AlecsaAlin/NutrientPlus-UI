@@ -1,20 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
-import '../../../core/services/api_service.dart';
-import '../../auth/models/user.dart';
-import '../models/calorie_info.dart';
 import '../../../core/constants/app_colors.dart';
+import '../viewmodels/profile_viewmodel.dart';
+import '../models/calorie_info.dart';
 
 class ProfileTab extends StatefulWidget {
-  final User? user;
-  final Function(User?) onUserUpdated;
   final VoidCallback onLogout;
 
   const ProfileTab({
     super.key,
-    required this.user,
-    required this.onUserUpdated,
     required this.onLogout,
   });
 
@@ -23,58 +19,77 @@ class ProfileTab extends StatefulWidget {
 }
 
 class _ProfileTabState extends State<ProfileTab> {
-  File? _profileImage;
+  late ProfileViewModel _viewModel;
   final ImagePicker _imagePicker = ImagePicker();
 
-  User? get _user => widget.user;
+  @override
+  void initState() {
+    super.initState();
+    _viewModel = ProfileViewModel();
+    _viewModel.loadUser();
+  }
+
+  @override
+  void dispose() {
+    _viewModel.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          _buildProfileHeader(),
-          const SizedBox(height: 24),
-          _buildHealthTargets(),
-          const SizedBox(height: 24),
-          _buildMealPreferences(),
-          const SizedBox(height: 24),
-          _buildSyncSettings(),
-          const SizedBox(height: 24),
-          _buildSignOutButton(),
-          const SizedBox(height: 8),
-          Text(
-            'Version 1.0.0',
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[400],
+    return ChangeNotifierProvider.value(
+      value: _viewModel,
+      child: Consumer<ProfileViewModel>(
+        builder: (context, viewModel, child) {
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                _buildProfileHeader(viewModel),
+                const SizedBox(height: 24),
+                _buildHealthTargets(viewModel),
+                const SizedBox(height: 24),
+                _buildMealPreferences(viewModel),
+                const SizedBox(height: 24),
+                _buildSyncSettings(),
+                const SizedBox(height: 24),
+                _buildSignOutButton(),
+                const SizedBox(height: 8),
+                Text(
+                  'Version 1.0.0',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[400],
+                  ),
+                ),
+                const SizedBox(height: 80),
+              ],
             ),
-          ),
-          const SizedBox(height: 80),
-        ],
+          );
+        },
       ),
     );
   }
 
-  Widget _buildProfileHeader() {
+  Widget _buildProfileHeader(ProfileViewModel viewModel) {
+    final user = viewModel.user;
     return Column(
       children: [
         GestureDetector(
-          onTap: _pickProfileImage,
+          onTap: () => _pickProfileImage(viewModel),
           child: Stack(
             children: [
               CircleAvatar(
                 radius: 50,
                 backgroundColor: AppColors.primary,
-                backgroundImage: _profileImage != null
-                    ? FileImage(_profileImage!)
-                    : (_user?.profileImagePath != null
-                        ? FileImage(File(_user!.profileImagePath!))
+                backgroundImage: viewModel.profileImage != null
+                    ? FileImage(viewModel.profileImage!)
+                    : (user?.profileImagePath != null
+                        ? FileImage(File(user!.profileImagePath!))
                         : null),
-                child: (_profileImage == null && _user?.profileImagePath == null)
+                child: (viewModel.profileImage == null && user?.profileImagePath == null)
                     ? Text(
-                        _user?.username[0].toUpperCase() ?? 'U',
+                        user?.username[0].toUpperCase() ?? 'U',
                         style: const TextStyle(
                           fontSize: 36,
                           fontWeight: FontWeight.bold,
@@ -105,7 +120,7 @@ class _ProfileTabState extends State<ProfileTab> {
         ),
         const SizedBox(height: 16),
         Text(
-          _user?.username ?? 'User',
+          user?.username ?? 'User',
           style: const TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.bold,
@@ -122,7 +137,7 @@ class _ProfileTabState extends State<ProfileTab> {
             ),
             const SizedBox(width: 4),
             Text(
-              _user?.email ?? '',
+              user?.email ?? '',
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.grey[600],
@@ -134,7 +149,7 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  Future<void> _pickProfileImage() async {
+  Future<void> _pickProfileImage(ProfileViewModel viewModel) async {
     final XFile? image = await _imagePicker.pickImage(
       source: ImageSource.gallery,
       maxWidth: 500,
@@ -143,14 +158,13 @@ class _ProfileTabState extends State<ProfileTab> {
     );
 
     if (image != null) {
-      setState(() {
-        _profileImage = File(image.path);
-      });
-      await ApiService.updateProfile(profileImagePath: image.path);
+      viewModel.setProfileImage(File(image.path));
+      await viewModel.updateProfileImagePath(image.path);
     }
   }
 
-  Widget _buildHealthTargets() {
+  Widget _buildHealthTargets(ProfileViewModel viewModel) {
+    final user = viewModel.user;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -182,7 +196,7 @@ class _ProfileTabState extends State<ProfileTab> {
           ],
         ),
         const SizedBox(height: 16),
-        _buildGenderSelector(),
+        _buildGenderSelector(viewModel),
         const SizedBox(height: 12),
         Row(
           children: [
@@ -190,9 +204,9 @@ class _ProfileTabState extends State<ProfileTab> {
               child: _buildStatCard(
                 icon: Icons.height,
                 label: 'HEIGHT',
-                value: _user?.height?.toStringAsFixed(0) ?? '--',
+                value: user?.height?.toStringAsFixed(0) ?? '--',
                 unit: 'cm',
-                onTap: () => _showEditNumberDialog('height', 'Height', 'cm', _user?.height),
+                onTap: () => _showEditNumberDialog(viewModel, 'height', 'Height', 'cm', user?.height),
               ),
             ),
             const SizedBox(width: 12),
@@ -200,9 +214,9 @@ class _ProfileTabState extends State<ProfileTab> {
               child: _buildStatCard(
                 icon: Icons.cake,
                 label: 'AGE',
-                value: _user?.age?.toString() ?? '--',
+                value: user?.age?.toString() ?? '--',
                 unit: 'yrs',
-                onTap: () => _showEditNumberDialog('age', 'Age', 'years', _user?.age?.toDouble()),
+                onTap: () => _showEditNumberDialog(viewModel, 'age', 'Age', 'years', user?.age?.toDouble()),
               ),
             ),
           ],
@@ -214,9 +228,9 @@ class _ProfileTabState extends State<ProfileTab> {
               child: _buildStatCard(
                 icon: Icons.monitor_weight_outlined,
                 label: 'CURRENT',
-                value: _user?.currentWeight?.toStringAsFixed(1) ?? '--',
+                value: user?.currentWeight?.toStringAsFixed(1) ?? '--',
                 unit: 'kg',
-                onTap: () => _showEditWeightDialog('current'),
+                onTap: () => _showEditWeightDialog(viewModel, 'current'),
               ),
             ),
             const SizedBox(width: 12),
@@ -224,18 +238,18 @@ class _ProfileTabState extends State<ProfileTab> {
               child: _buildStatCard(
                 icon: Icons.flag,
                 label: 'GOAL',
-                value: _user?.goalWeight?.toStringAsFixed(1) ?? '--',
+                value: user?.goalWeight?.toStringAsFixed(1) ?? '--',
                 unit: 'kg',
-                onTap: () => _showEditWeightDialog('goal'),
+                onTap: () => _showEditWeightDialog(viewModel, 'goal'),
                 isHighlighted: true,
               ),
             ),
           ],
         ),
         const SizedBox(height: 12),
-        _buildActivityLevelCard(),
+        _buildActivityLevelCard(viewModel),
         const SizedBox(height: 12),
-        _buildGoalTypeCard(),
+        _buildGoalTypeCard(viewModel),
       ],
     );
   }
@@ -310,8 +324,8 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  Widget _buildGenderSelector() {
-    final selectedGender = _user?.gender;
+  Widget _buildGenderSelector(ProfileViewModel viewModel) {
+    final selectedGender = viewModel.user?.gender;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -341,9 +355,9 @@ class _ProfileTabState extends State<ProfileTab> {
           const SizedBox(height: 12),
           Row(
             children: [
-              _buildGenderOption('male', 'Male', Icons.male, selectedGender == 'male'),
+              _buildGenderOption(viewModel, 'male', 'Male', Icons.male, selectedGender == 'male'),
               const SizedBox(width: 12),
-              _buildGenderOption('female', 'Female', Icons.female, selectedGender == 'female'),
+              _buildGenderOption(viewModel, 'female', 'Female', Icons.female, selectedGender == 'female'),
             ],
           ),
         ],
@@ -351,10 +365,10 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  Widget _buildGenderOption(String value, String label, IconData icon, bool isSelected) {
+  Widget _buildGenderOption(ProfileViewModel viewModel, String value, String label, IconData icon, bool isSelected) {
     return Expanded(
       child: GestureDetector(
-        onTap: () => _updateGender(value),
+        onTap: () => viewModel.updateGender(value),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
@@ -387,17 +401,11 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  Future<void> _updateGender(String gender) async {
-    final updatedUser = _user?.copyWith(gender: gender);
-    widget.onUserUpdated(updatedUser);
-    await ApiService.updateProfile(gender: gender);
-  }
-
-  Widget _buildActivityLevelCard() {
-    final currentLevel = ActivityLevel.fromString(_user?.activityLevel);
+  Widget _buildActivityLevelCard(ProfileViewModel viewModel) {
+    final currentLevel = ActivityLevel.fromString(viewModel.user?.activityLevel);
 
     return GestureDetector(
-      onTap: () => _showActivityLevelDialog(),
+      onTap: () => _showActivityLevelDialog(viewModel),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -447,11 +455,11 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  Widget _buildGoalTypeCard() {
-    final currentGoal = GoalType.fromString(_user?.goalType);
+  Widget _buildGoalTypeCard(ProfileViewModel viewModel) {
+    final currentGoal = GoalType.fromString(viewModel.user?.goalType);
 
     return GestureDetector(
-      onTap: () => _showGoalTypeDialog(),
+      onTap: () => _showGoalTypeDialog(viewModel),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -501,7 +509,7 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  Widget _buildMealPreferences() {
+  Widget _buildMealPreferences(ProfileViewModel viewModel) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -516,11 +524,11 @@ class _ProfileTabState extends State<ProfileTab> {
         Row(
           children: [
             Expanded(
-              child: _buildMealsPerDayCard(),
+              child: _buildMealsPerDayCard(viewModel),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _buildMaxCookTimeCard(),
+              child: _buildMaxCookTimeCard(viewModel),
             ),
           ],
         ),
@@ -528,11 +536,11 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  Widget _buildMealsPerDayCard() {
-    final mealsPerDay = _user?.preferredMealsPerDay ?? 3;
+  Widget _buildMealsPerDayCard(ProfileViewModel viewModel) {
+    final mealsPerDay = viewModel.user?.preferredMealsPerDay ?? 3;
 
     return GestureDetector(
-      onTap: () => _showMealsPerDayDialog(),
+      onTap: () => _showMealsPerDayDialog(viewModel),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -589,12 +597,12 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  Widget _buildMaxCookTimeCard() {
-    final maxCookTime = _user?.maxCookTime;
+  Widget _buildMaxCookTimeCard(ProfileViewModel viewModel) {
+    final maxCookTime = viewModel.user?.maxCookTime;
     final hasLimit = maxCookTime != null;
 
     return GestureDetector(
-      onTap: () => _showMaxCookTimeDialog(),
+      onTap: () => _showMaxCookTimeDialog(viewModel),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -660,7 +668,7 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  void _showMealsPerDayDialog() {
+  void _showMealsPerDayDialog(ProfileViewModel viewModel) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -684,23 +692,19 @@ class _ProfileTabState extends State<ProfileTab> {
             _buildSelectionOption(
               label: '3 Meals',
               description: 'Breakfast, Lunch, Dinner',
-              isSelected: (_user?.preferredMealsPerDay ?? 3) == 3,
-              onTap: () async {
+              isSelected: (viewModel.user?.preferredMealsPerDay ?? 3) == 3,
+              onTap: () {
                 Navigator.pop(context);
-                final updatedUser = _user?.copyWith(preferredMealsPerDay: 3);
-                widget.onUserUpdated(updatedUser);
-                await ApiService.updateProfile(preferredMealsPerDay: 3);
+                viewModel.updatePreferredMealsPerDay(3);
               },
             ),
             _buildSelectionOption(
               label: '4 Meals',
               description: 'Breakfast, Lunch, Snack, Dinner',
-              isSelected: _user?.preferredMealsPerDay == 4,
-              onTap: () async {
+              isSelected: viewModel.user?.preferredMealsPerDay == 4,
+              onTap: () {
                 Navigator.pop(context);
-                final updatedUser = _user?.copyWith(preferredMealsPerDay: 4);
-                widget.onUserUpdated(updatedUser);
-                await ApiService.updateProfile(preferredMealsPerDay: 4);
+                viewModel.updatePreferredMealsPerDay(4);
               },
             ),
             const SizedBox(height: 20),
@@ -710,9 +714,9 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  void _showMaxCookTimeDialog() {
+  void _showMaxCookTimeDialog(ProfileViewModel viewModel) {
     final controller = TextEditingController(
-      text: _user?.maxCookTime?.toString() ?? '',
+      text: viewModel.user?.maxCookTime?.toString() ?? '',
     );
 
     showDialog(
@@ -751,12 +755,9 @@ class _ProfileTabState extends State<ProfileTab> {
         ),
         actions: [
           TextButton(
-            onPressed: () async {
+            onPressed: () {
               Navigator.pop(context);
-              // Clear the value (set to null/unlimited)
-              final updatedUser = _user?.copyWith(clearMaxCookTime: true);
-              widget.onUserUpdated(updatedUser);
-              await ApiService.updateProfile(clearMaxCookTime: true);
+              viewModel.updateMaxCookTime(null, clear: true);
             },
             child: Text(
               'No Limit',
@@ -764,13 +765,11 @@ class _ProfileTabState extends State<ProfileTab> {
             ),
           ),
           ElevatedButton(
-            onPressed: () async {
+            onPressed: () {
               final value = int.tryParse(controller.text);
               if (value != null && value > 0) {
                 Navigator.pop(context);
-                final updatedUser = _user?.copyWith(maxCookTime: value);
-                widget.onUserUpdated(updatedUser);
-                await ApiService.updateProfile(maxCookTime: value);
+                viewModel.updateMaxCookTime(value);
               }
             },
             style: ElevatedButton.styleFrom(
@@ -787,7 +786,7 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  void _showActivityLevelDialog() {
+  void _showActivityLevelDialog(ProfileViewModel viewModel) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -811,12 +810,10 @@ class _ProfileTabState extends State<ProfileTab> {
             ...ActivityLevel.values.map((level) => _buildSelectionOption(
               label: level.label,
               description: level.description,
-              isSelected: _user?.activityLevel == level.value,
-              onTap: () async {
+              isSelected: viewModel.user?.activityLevel == level.value,
+              onTap: () {
                 Navigator.pop(context);
-                final updatedUser = _user?.copyWith(activityLevel: level.value);
-                widget.onUserUpdated(updatedUser);
-                await ApiService.updateProfile(activityLevel: level.value);
+                viewModel.updateActivityLevel(level.value);
               },
             )),
             const SizedBox(height: 20),
@@ -826,7 +823,7 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  void _showGoalTypeDialog() {
+  void _showGoalTypeDialog(ProfileViewModel viewModel) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -850,12 +847,10 @@ class _ProfileTabState extends State<ProfileTab> {
             ...GoalType.values.map((goal) => _buildSelectionOption(
               label: goal.label,
               description: goal.description,
-              isSelected: _user?.goalType == goal.value,
-              onTap: () async {
+              isSelected: viewModel.user?.goalType == goal.value,
+              onTap: () {
                 Navigator.pop(context);
-                final updatedUser = _user?.copyWith(goalType: goal.value);
-                widget.onUserUpdated(updatedUser);
-                await ApiService.updateProfile(goalType: goal.value);
+                viewModel.updateGoalType(goal.value);
               },
             )),
             const SizedBox(height: 20),
@@ -917,7 +912,7 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  void _showEditNumberDialog(String type, String title, String unit, double? currentValue) {
+  void _showEditNumberDialog(ProfileViewModel viewModel, String type, String title, String unit, double? currentValue) {
     final controller = TextEditingController(
       text: currentValue?.toStringAsFixed(0) ?? '',
     );
@@ -953,11 +948,15 @@ class _ProfileTabState extends State<ProfileTab> {
             ),
           ),
           ElevatedButton(
-            onPressed: () async {
+            onPressed: () {
               final value = double.tryParse(controller.text);
               if (value != null && value > 0) {
                 Navigator.pop(context);
-                await _saveNumber(type, value);
+                if (type == 'height') {
+                  viewModel.updateHeight(value);
+                } else if (type == 'age') {
+                  viewModel.updateAge(value.toInt());
+                }
               }
             },
             style: ElevatedButton.styleFrom(
@@ -974,25 +973,9 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  Future<void> _saveNumber(String type, double value) async {
-    User? updatedUser;
-    if (type == 'height') {
-      updatedUser = _user?.copyWith(height: value);
-    } else if (type == 'age') {
-      updatedUser = _user?.copyWith(age: value.toInt());
-    }
-    widget.onUserUpdated(updatedUser);
-
-    if (type == 'height') {
-      await ApiService.updateProfile(height: value);
-    } else {
-      await ApiService.updateProfile(age: value.toInt());
-    }
-  }
-
-  void _showEditWeightDialog(String type) {
+  void _showEditWeightDialog(ProfileViewModel viewModel, String type) {
     final isCurrentWeight = type == 'current';
-    final currentValue = isCurrentWeight ? _user?.currentWeight : _user?.goalWeight;
+    final currentValue = isCurrentWeight ? viewModel.user?.currentWeight : viewModel.user?.goalWeight;
     final controller = TextEditingController(
       text: currentValue?.toStringAsFixed(1) ?? '',
     );
@@ -1026,11 +1009,15 @@ class _ProfileTabState extends State<ProfileTab> {
             ),
           ),
           ElevatedButton(
-            onPressed: () async {
+            onPressed: () {
               final value = double.tryParse(controller.text);
               if (value != null && value > 0) {
                 Navigator.pop(context);
-                await _saveWeight(type, value);
+                if (isCurrentWeight) {
+                  viewModel.updateCurrentWeight(value);
+                } else {
+                  viewModel.updateGoalWeight(value);
+                }
               }
             },
             style: ElevatedButton.styleFrom(
@@ -1045,19 +1032,6 @@ class _ProfileTabState extends State<ProfileTab> {
         ],
       ),
     );
-  }
-
-  Future<void> _saveWeight(String type, double value) async {
-    User? updatedUser;
-    if (type == 'current') {
-      updatedUser = _user?.copyWith(currentWeight: value);
-      widget.onUserUpdated(updatedUser);
-      await ApiService.updateProfile(currentWeight: value);
-    } else {
-      updatedUser = _user?.copyWith(goalWeight: value);
-      widget.onUserUpdated(updatedUser);
-      await ApiService.updateProfile(goalWeight: value);
-    }
   }
 
   Widget _buildSyncSettings() {

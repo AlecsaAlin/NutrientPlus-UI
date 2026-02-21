@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../meal_plan/models/meal_models.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../core/services/api_service.dart';
+import '../../../core/services/api_service.dart' show FavoriteRecipe, UserRating;
+import '../../meal_plan/models/meal_models.dart' show RecipeDetail;
+import '../../../core/utils/text_helpers.dart';
+import '../viewmodels/saved_viewmodel.dart';
 
 class SavedRecipesTab extends StatefulWidget {
   const SavedRecipesTab({super.key});
@@ -13,169 +17,100 @@ class SavedRecipesTab extends StatefulWidget {
 class _SavedRecipesTabState extends State<SavedRecipesTab>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-
-  List<FavoriteRecipe> _favorites = [];
-  List<UserRating> _ratings = [];
-  bool _isLoadingFavorites = true;
-  bool _isLoadingRatings = true;
-
-  // Reviews sort: 'time' or 'score'
-  String _reviewSort = 'time';
+  late SavedViewModel _viewModel;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _loadData();
+    _viewModel = SavedViewModel();
+    _viewModel.loadData();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _viewModel.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadData() {
-    return Future.wait([
-      _loadFavorites(),
-      _loadRatings(),
-    ]);
-  }
-
-  Future<void> _loadFavorites() async {
-    final result = await ApiService.getFavorites();
-    if (mounted) {
-      setState(() {
-        _isLoadingFavorites = false;
-        if (result.success && result.favorites != null) {
-          _favorites = result.favorites!;
-        }
-      });
-    }
-  }
-
-  Future<void> _loadRatings() async {
-    final result = await ApiService.getUserRatings();
-    if (mounted) {
-      setState(() {
-        _isLoadingRatings = false;
-        if (result.success && result.ratings != null) {
-          _ratings = result.ratings!;
-        }
-      });
-    }
-  }
-
-  List<UserRating> get _sortedRatings {
-    final sorted = List<UserRating>.from(_ratings);
-    if (_reviewSort == 'score') {
-      sorted.sort((a, b) => b.rating.compareTo(a.rating));
-    }
-    // 'time' is the default order from the API (most recent first)
-    return sorted;
-  }
-
-  Future<void> _removeFavorite(FavoriteRecipe fav) async {
-    setState(() {
-      _favorites.remove(fav);
-    });
-    final success = await ApiService.removeFavorite(recipeId: fav.recipeId);
-    if (!success && mounted) {
-      setState(() {
-        _favorites.add(fav);
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to remove favorite')),
-      );
-    }
-  }
-
-  Future<void> _deleteRating(UserRating rating) async {
-    setState(() {
-      _ratings.remove(rating);
-    });
-    final success =
-        await ApiService.deleteRecipeRating(recipeId: rating.recipeId);
-    if (!success && mounted) {
-      setState(() {
-        _ratings.add(rating);
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to delete review')),
-      );
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: TabBar(
-              controller: _tabController,
-              indicator: BoxDecoration(
-                color: AppColors.primary,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              indicatorSize: TabBarIndicatorSize.tab,
-              labelColor: Colors.white,
-              unselectedLabelColor: AppColors.textSecondary,
-              labelStyle: const TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-              ),
-              dividerColor: Colors.transparent,
-              tabs: [
-                Tab(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.favorite, size: 18),
-                      const SizedBox(width: 6),
-                      Text('Favorites (${_favorites.length})'),
-                    ],
-                  ),
-                ),
-                Tab(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.star, size: 18),
-                      const SizedBox(width: 6),
-                      Text('Reviews (${_ratings.length})'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        Expanded(
-          child: TabBarView(
-            controller: _tabController,
+    return ChangeNotifierProvider.value(
+      value: _viewModel,
+      child: Consumer<SavedViewModel>(
+        builder: (context, viewModel, child) {
+          return Column(
             children: [
-              _buildFavoritesPage(),
-              _buildReviewsPage(),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: TabBar(
+                    controller: _tabController,
+                    indicator: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    labelColor: Colors.white,
+                    unselectedLabelColor: AppColors.textSecondary,
+                    labelStyle: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                    dividerColor: Colors.transparent,
+                    tabs: [
+                      Tab(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.favorite, size: 18),
+                            const SizedBox(width: 6),
+                            Text('Favorites (${viewModel.favorites.length})'),
+                          ],
+                        ),
+                      ),
+                      Tab(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.star, size: 18),
+                            const SizedBox(width: 6),
+                            Text('Reviews (${viewModel.ratings.length})'),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildFavoritesPage(viewModel),
+                    _buildReviewsPage(viewModel),
+                  ],
+                ),
+              ),
             ],
-          ),
-        ),
-      ],
+          );
+        },
+      ),
     );
   }
 
   // ── Favorites page ────────────────────────────────────
 
-  Widget _buildFavoritesPage() {
-    if (_isLoadingFavorites) {
+  Widget _buildFavoritesPage(SavedViewModel viewModel) {
+    if (viewModel.isLoadingFavorites) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_favorites.isEmpty) {
+    if (viewModel.favorites.isEmpty) {
       return _buildEmptyState(
         icon: Icons.favorite_border,
         title: 'No favorites yet',
@@ -183,19 +118,19 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
       );
     }
     return RefreshIndicator(
-      onRefresh: _loadFavorites,
+      onRefresh: viewModel.loadFavorites,
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
-        itemCount: _favorites.length,
+        itemCount: viewModel.favorites.length,
         itemBuilder: (context, index) {
-          final fav = _favorites[index];
-          return _buildFavoriteCard(fav);
+          final fav = viewModel.favorites[index];
+          return _buildFavoriteCard(viewModel, fav);
         },
       ),
     );
   }
 
-  Widget _buildFavoriteCard(FavoriteRecipe fav) {
+  Widget _buildFavoriteCard(SavedViewModel viewModel, FavoriteRecipe fav) {
     final name = fav.recipeName.isNotEmpty
         ? fav.recipeName
         : 'Recipe #${fav.recipeId}';
@@ -204,7 +139,14 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
     return Dismissible(
       key: Key('fav-${fav.id}'),
       direction: DismissDirection.endToStart,
-      onDismissed: (_) => _removeFavorite(fav),
+      onDismissed: (_) async {
+        final success = await viewModel.removeFavorite(fav);
+        if (!success && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to remove favorite')),
+          );
+        }
+      },
       background: Container(
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
@@ -216,7 +158,7 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
         child: const Icon(Icons.delete, color: Colors.white),
       ),
       child: GestureDetector(
-        onTap: () => _onRecipeTap(fav.recipeId),
+        onTap: () => _onRecipeTap(viewModel, fav.recipeId),
         child: Container(
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(16),
@@ -299,11 +241,11 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
 
   // ── Reviews page ──────────────────────────────────────
 
-  Widget _buildReviewsPage() {
-    if (_isLoadingRatings) {
+  Widget _buildReviewsPage(SavedViewModel viewModel) {
+    if (viewModel.isLoadingRatings) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_ratings.isEmpty) {
+    if (viewModel.ratings.isEmpty) {
       return _buildEmptyState(
         icon: Icons.star_border,
         title: 'No reviews yet',
@@ -311,7 +253,7 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
       );
     }
 
-    final sorted = _sortedRatings;
+    final sorted = viewModel.sortedRatings;
 
     return Column(
       children: [
@@ -325,20 +267,20 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
                 style: TextStyle(fontSize: 13, color: Colors.grey[600]),
               ),
               const SizedBox(width: 8),
-              _buildSortChip('time', 'Most recent'),
+              _buildSortChip(viewModel, 'time', 'Most recent'),
               const SizedBox(width: 8),
-              _buildSortChip('score', 'Highest rated'),
+              _buildSortChip(viewModel, 'score', 'Highest rated'),
             ],
           ),
         ),
         Expanded(
           child: RefreshIndicator(
-            onRefresh: _loadRatings,
+            onRefresh: viewModel.loadRatings,
             child: ListView.builder(
               padding: const EdgeInsets.all(16),
               itemCount: sorted.length,
               itemBuilder: (context, index) {
-                return _buildRatingCard(sorted[index]);
+                return _buildRatingCard(viewModel, sorted[index]);
               },
             ),
           ),
@@ -347,10 +289,10 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
     );
   }
 
-  Widget _buildSortChip(String value, String label) {
-    final selected = _reviewSort == value;
+  Widget _buildSortChip(SavedViewModel viewModel, String value, String label) {
+    final selected = viewModel.reviewSort == value;
     return GestureDetector(
-      onTap: () => setState(() => _reviewSort = value),
+      onTap: () => viewModel.setReviewSort(value),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
@@ -369,7 +311,7 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
     );
   }
 
-  Widget _buildRatingCard(UserRating rating) {
+  Widget _buildRatingCard(SavedViewModel viewModel, UserRating rating) {
     final name = rating.recipeName.isNotEmpty
         ? rating.recipeName
         : 'Recipe #${rating.recipeId}';
@@ -378,7 +320,14 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
     return Dismissible(
       key: Key('rating-${rating.id}'),
       direction: DismissDirection.endToStart,
-      onDismissed: (_) => _deleteRating(rating),
+      onDismissed: (_) async {
+        final success = await viewModel.deleteRating(rating);
+        if (!success && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to delete review')),
+          );
+        }
+      },
       background: Container(
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
@@ -390,7 +339,7 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
         child: const Icon(Icons.delete, color: Colors.white),
       ),
       child: GestureDetector(
-        onTap: () => _onRecipeTap(rating.recipeId),
+        onTap: () => _onRecipeTap(viewModel, rating.recipeId),
         child: Container(
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(16),
@@ -508,15 +457,14 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
 
   // ── Recipe detail sheet ───────────────────────────────
 
-  Future<void> _onRecipeTap(int recipeId) async {
-    // Show loading indicator
+  Future<void> _onRecipeTap(SavedViewModel viewModel, int recipeId) async {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
 
-    final recipe = await ApiService.getRecipeById(recipeId: recipeId);
+    final recipe = await viewModel.getRecipeById(recipeId);
     if (!mounted) return;
     Navigator.pop(context); // dismiss loading
 
@@ -576,13 +524,11 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
                   ),
                 ],
                 const SizedBox(height: 16),
-                // Nutrition chips
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    _infoChip(
-                        '${recipe.calories.round()} cal', Icons.local_fire_department),
+                    _infoChip('${recipe.calories.round()} cal', Icons.local_fire_department),
                     _infoChip('${recipe.proteinG.round()}g P', Icons.fitness_center),
                     _infoChip('${recipe.carbsG.round()}g C', Icons.grain),
                     _infoChip('${recipe.fatG.round()}g F', Icons.opacity),
@@ -606,8 +552,7 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
                       if (recipe.numIngredients != null) ...[
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 2),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
                             color: AppColors.primaryWithOpacity(0.1),
                             borderRadius: BorderRadius.circular(12),
@@ -626,7 +571,7 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    _cleanIngredients(recipe.ingredients!),
+                    TextHelpers.cleanIngredients(recipe.ingredients!),
                     style: const TextStyle(
                       fontSize: 14,
                       height: 1.6,
@@ -647,7 +592,7 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    _cleanInstructions(recipe.instructions!),
+                    TextHelpers.cleanInstructions(recipe.instructions!),
                     style: const TextStyle(
                       fontSize: 14,
                       height: 1.6,
@@ -772,45 +717,5 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
     if (diff.inHours > 0) return '${diff.inHours}h ago';
     if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';
     return 'Just now';
-  }
-
-  // ── Text cleaning (same logic as meal_plan_tab) ──────
-
-  String _cleanText(String text) {
-    String cleaned = text;
-    if (cleaned.startsWith('c(') ||
-        cleaned.startsWith('c"') ||
-        cleaned.startsWith("c'")) {
-      cleaned = cleaned.substring(1);
-    }
-    cleaned = cleaned.replaceAll('"', '').replaceAll("'", '');
-    if (cleaned.startsWith('(') && cleaned.endsWith(')')) {
-      cleaned = cleaned.substring(1, cleaned.length - 1);
-    }
-    return cleaned.trim();
-  }
-
-  List<String> _parseIngredients(String ingredients) {
-    String cleaned = _cleanText(ingredients);
-    return cleaned
-        .split('|')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
-  }
-
-  String _cleanIngredients(String ingredients) {
-    final items = _parseIngredients(ingredients);
-    if (items.isEmpty) return '';
-    return items.map((e) => '\u2022 $e').join('\n');
-  }
-
-  String _cleanInstructions(String instructions) {
-    String cleaned = _cleanText(instructions);
-    cleaned = cleaned.replaceAllMapped(
-      RegExp(r'\.\s*,?\s*'),
-      (match) => '.\n\n',
-    );
-    return cleaned.trim();
   }
 }
