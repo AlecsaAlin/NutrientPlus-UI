@@ -3,7 +3,6 @@ import '../../../core/repositories/recipe_repository.dart';
 import '../../../core/services/api_service.dart' show FavoriteRecipe, UserRating;
 import '../../meal_plan/models/meal_models.dart' show RecipeDetail;
 
-/// ViewModel for Saved (Favorites & Reviews) screen
 class SavedViewModel extends BaseViewModel {
   final RecipeRepository _recipeRepository;
 
@@ -16,7 +15,6 @@ class SavedViewModel extends BaseViewModel {
   bool _isLoadingRatings = true;
   String _reviewSort = 'time';
 
-  // Getters
   List<FavoriteRecipe> get favorites => _favorites;
   List<UserRating> get ratings => _ratings;
   bool get isLoadingFavorites => _isLoadingFavorites;
@@ -31,7 +29,6 @@ class SavedViewModel extends BaseViewModel {
     return sorted;
   }
 
-  /// Load both favorites and ratings
   Future<void> loadData() {
     return Future.wait([
       loadFavorites(),
@@ -39,7 +36,6 @@ class SavedViewModel extends BaseViewModel {
     ]);
   }
 
-  /// Load favorites
   Future<void> loadFavorites() async {
     final result = await _recipeRepository.getFavorites();
     _isLoadingFavorites = false;
@@ -49,7 +45,6 @@ class SavedViewModel extends BaseViewModel {
     notifyListeners();
   }
 
-  /// Load ratings
   Future<void> loadRatings() async {
     final result = await _recipeRepository.getUserRatings();
     _isLoadingRatings = false;
@@ -59,18 +54,17 @@ class SavedViewModel extends BaseViewModel {
     notifyListeners();
   }
 
-  /// Set review sort order
   void setReviewSort(String sort) {
     _reviewSort = sort;
     notifyListeners();
   }
 
-  /// Remove a favorite (optimistic)
   Future<bool> removeFavorite(FavoriteRecipe fav) async {
     _favorites.remove(fav);
     notifyListeners();
 
-    final success = await _recipeRepository.removeFavorite(recipeId: fav.recipeId);
+    final success =
+        await _recipeRepository.removeFavorite(recipeId: fav.recipeId);
     if (!success) {
       _favorites.add(fav);
       notifyListeners();
@@ -78,12 +72,12 @@ class SavedViewModel extends BaseViewModel {
     return success;
   }
 
-  /// Delete a rating (optimistic)
   Future<bool> deleteRating(UserRating rating) async {
     _ratings.remove(rating);
     notifyListeners();
 
-    final success = await _recipeRepository.deleteRecipeRating(recipeId: rating.recipeId);
+    final success = await _recipeRepository.deleteRecipeRating(
+        recipeId: rating.recipeId);
     if (!success) {
       _ratings.add(rating);
       notifyListeners();
@@ -91,7 +85,6 @@ class SavedViewModel extends BaseViewModel {
     return success;
   }
 
-  /// Get recipe details by ID
   Future<RecipeDetail?> getRecipeById(int recipeId) async {
     return await _recipeRepository.getRecipeById(recipeId: recipeId);
   }

@@ -1,14 +1,13 @@
 import '../../features/auth/models/user.dart';
 import '../services/api_service.dart';
 
-/// Repository for user-related data operations
-/// Acts as single source of truth for user data
+
 class UserRepository {
   User? _cachedUser;
 
   User? get cachedUser => _cachedUser;
 
-  /// Get current user from API or cache
+
   Future<User?> getCurrentUser({bool forceRefresh = false}) async {
     if (_cachedUser != null && !forceRefresh) {
       return _cachedUser;
@@ -63,5 +62,58 @@ class UserRepository {
   /// Check if user is logged in
   Future<bool> isLoggedIn() async {
     return await ApiService.isLoggedIn();
+  }
+
+  /// Search ingredients by name
+  Future<List<String>> searchIngredients({required String query}) async {
+    return await ApiService.searchIngredients(query: query);
+  }
+
+  Future<List<String>> getExcludedIngredients() async {
+    return await ApiService.getExcludedIngredients();
+  }
+
+  Future<bool> addExcludedIngredient({required String ingredient}) async {
+    final success = await ApiService.addExcludedIngredient(ingredient: ingredient);
+    if (success && _cachedUser != null) {
+      final updated = [..._cachedUser!.excludedIngredients, ingredient];
+      _cachedUser = _cachedUser!.copyWith(excludedIngredients: updated);
+    }
+    return success;
+  }
+
+  Future<bool> removeExcludedIngredient({required String ingredient}) async {
+    final success = await ApiService.removeExcludedIngredient(ingredient: ingredient);
+    if (success && _cachedUser != null) {
+      final updated = _cachedUser!.excludedIngredients
+          .where((i) => i != ingredient)
+          .toList();
+      _cachedUser = _cachedUser!.copyWith(excludedIngredients: updated);
+    }
+    return success;
+  }
+
+  Future<List<String>> getLikedIngredients() async {
+    return await ApiService.getLikedIngredients();
+  }
+
+  Future<bool> addLikedIngredient({required String ingredient}) async {
+    final success = await ApiService.addLikedIngredient(ingredient: ingredient);
+    if (success && _cachedUser != null) {
+      final updated = [..._cachedUser!.likedIngredients, ingredient];
+      _cachedUser = _cachedUser!.copyWith(likedIngredients: updated);
+    }
+    return success;
+  }
+
+  Future<bool> removeLikedIngredient({required String ingredient}) async {
+    final success = await ApiService.removeLikedIngredient(ingredient: ingredient);
+    if (success && _cachedUser != null) {
+      final updated = _cachedUser!.likedIngredients
+          .where((i) => i != ingredient)
+          .toList();
+      _cachedUser = _cachedUser!.copyWith(likedIngredients: updated);
+    }
+    return success;
   }
 }

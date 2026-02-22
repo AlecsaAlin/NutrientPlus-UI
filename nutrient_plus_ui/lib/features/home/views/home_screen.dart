@@ -7,6 +7,7 @@ import '../../watch/views/watch_tab.dart';
 import '../../profile/views/profile_tab.dart';
 import '../../meal_plan/views/meal_plan_tab.dart';
 import '../../saved/views/saved_tab.dart' show SavedRecipesTab;
+import '../../ingredients/views/ingredients_tab.dart';
 import '../viewmodels/home_viewmodel.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -146,7 +147,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         if (value == 'logout') {
                           _logout();
                         } else if (value == 'profile') {
-                          viewModel.setSelectedIndex(3);
+                          viewModel.setSelectedIndex(4);
                         }
                       },
                     ),
@@ -187,6 +188,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   label: 'Watch',
                 ),
                 BottomNavigationBarItem(
+                  icon: Icon(Icons.restaurant),
+                  label: 'Ingredients',
+                ),
+                BottomNavigationBarItem(
                   icon: Icon(Icons.person),
                   label: 'Profile',
                 ),
@@ -207,6 +212,8 @@ class _HomeScreenState extends State<HomeScreen> {
       case 2:
         return const WatchTab();
       case 3:
+        return const IngredientsTab();
+      case 4:
         return ProfileTab(
           onLogout: _logout,
         );

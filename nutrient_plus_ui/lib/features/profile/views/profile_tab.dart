@@ -1062,7 +1062,7 @@ class _ProfileTabState extends State<ProfileTab> {
                 trailing: Switch(
                   value: true,
                   onChanged: (value) {},
-                  activeColor: AppColors.primary,
+                  activeThumbColor: AppColors.primary,
                 ),
                 showBorder: true,
               ),

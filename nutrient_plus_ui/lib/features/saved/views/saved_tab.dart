@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../meal_plan/models/meal_models.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/api_service.dart' show FavoriteRecipe, UserRating;
-import '../../meal_plan/models/meal_models.dart' show RecipeDetail;
 import '../../../core/utils/text_helpers.dart';
+import '../../meal_plan/models/meal_models.dart' show RecipeDetail;
 import '../viewmodels/saved_viewmodel.dart';
 
 class SavedRecipesTab extends StatefulWidget {
@@ -70,7 +69,12 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
                           children: [
                             const Icon(Icons.favorite, size: 18),
                             const SizedBox(width: 6),
-                            Text('Favorites (${viewModel.favorites.length})'),
+                            Flexible(
+                              child: Text(
+                                'Favorites (${viewModel.favorites.length})',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -80,7 +84,12 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
                           children: [
                             const Icon(Icons.star, size: 18),
                             const SizedBox(width: 6),
-                            Text('Reviews (${viewModel.ratings.length})'),
+                            Flexible(
+                              child: Text(
+                                'Reviews (${viewModel.ratings.length})',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -104,7 +113,6 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
     );
   }
 
-  // ── Favorites page ────────────────────────────────────
 
   Widget _buildFavoritesPage(SavedViewModel viewModel) {
     if (viewModel.isLoadingFavorites) {
@@ -239,7 +247,7 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
     );
   }
 
-  // ── Reviews page ──────────────────────────────────────
+
 
   Widget _buildReviewsPage(SavedViewModel viewModel) {
     if (viewModel.isLoadingRatings) {
@@ -257,7 +265,6 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
 
     return Column(
       children: [
-        // Sort bar
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
           child: Row(
@@ -455,7 +462,6 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
     );
   }
 
-  // ── Recipe detail sheet ───────────────────────────────
 
   Future<void> _onRecipeTap(SavedViewModel viewModel, int recipeId) async {
     showDialog(
@@ -466,7 +472,7 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
 
     final recipe = await viewModel.getRecipeById(recipeId);
     if (!mounted) return;
-    Navigator.pop(context); // dismiss loading
+    Navigator.pop(context); 
 
     if (recipe == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -609,7 +615,6 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
     );
   }
 
-  // ── Helpers ───────────────────────────────────────────
 
   Widget _infoChip(String label, IconData icon) {
     return Container(

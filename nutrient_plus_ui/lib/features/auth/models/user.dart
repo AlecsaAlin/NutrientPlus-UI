@@ -13,6 +13,8 @@ class User {
   final String? goalType;
   final int? preferredMealsPerDay;
   final int? maxCookTime;
+  final List<String> excludedIngredients;
+  final List<String> likedIngredients;
 
   User({
     required this.id,
@@ -29,6 +31,8 @@ class User {
     this.goalType,
     this.preferredMealsPerDay,
     this.maxCookTime,
+    this.excludedIngredients = const [],
+    this.likedIngredients = const [],
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -47,6 +51,14 @@ class User {
       goalType: json['goal_type'],
       preferredMealsPerDay: json['preferred_meals_per_day'],
       maxCookTime: json['max_cook_time'],
+      excludedIngredients: (json['excluded_ingredients'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
+      likedIngredients: (json['liked_ingredients'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
     );
   }
 
@@ -66,6 +78,8 @@ class User {
       'goal_type': goalType,
       'preferred_meals_per_day': preferredMealsPerDay,
       'max_cook_time': maxCookTime,
+      'excluded_ingredients': excludedIngredients,
+      'liked_ingredients': likedIngredients,
     };
   }
 
@@ -85,6 +99,8 @@ class User {
     int? preferredMealsPerDay,
     int? maxCookTime,
     bool clearMaxCookTime = false,
+    List<String>? excludedIngredients,
+    List<String>? likedIngredients,
   }) {
     return User(
       id: id ?? this.id,
@@ -101,6 +117,8 @@ class User {
       goalType: goalType ?? this.goalType,
       preferredMealsPerDay: preferredMealsPerDay ?? this.preferredMealsPerDay,
       maxCookTime: clearMaxCookTime ? null : (maxCookTime ?? this.maxCookTime),
+      excludedIngredients: excludedIngredients ?? this.excludedIngredients,
+      likedIngredients: likedIngredients ?? this.likedIngredients,
     );
   }
 }
