@@ -14,6 +14,28 @@ class ApiService {
   static String? _token;
   static User? _currentUser;
 
+  static String _extractError(dynamic detail, String fallback) {
+    if (detail == null) return fallback;
+    if (detail is String) return detail;
+    if (detail is List && detail.isNotEmpty) {
+      final first = detail.first;
+      if (first is Map) {
+        final loc = first['loc'];
+        if (loc is List && loc.isNotEmpty) {
+          switch (loc.last?.toString()) {
+            case 'email':
+              return 'Please enter a valid email address';
+            case 'password':
+              return 'Password is too short or invalid';
+            case 'username':
+              return 'Username is invalid';
+          }
+        }
+      }
+    }
+    return fallback;
+  }
+
   static Future<void> _saveToken(String token) async {
     _token = token;
     final prefs = await SharedPreferences.getInstance();
@@ -64,7 +86,7 @@ class ApiService {
       } else {
         return AuthResult(
           success: false,
-          error: data['detail'] ?? 'Registration failed',
+          error: _extractError(data['detail'], 'Registration failed'),
         );
       }
     } catch (e) {
@@ -95,7 +117,7 @@ class ApiService {
       } else {
         return AuthResult(
           success: false,
-          error: data['detail'] ?? 'Login failed',
+          error: _extractError(data['detail'], 'Login failed'),
         );
       }
     } catch (e) {
@@ -207,7 +229,6 @@ class ApiService {
     }
   }
 
-  /// Get calorie information based on user profile
   static Future<CalorieResult> getCalorieInfo() async {
     final token = await getToken();
     if (token == null) {
@@ -238,11 +259,9 @@ class ApiService {
     }
   }
 
-  /// Generate a meal plan using ML recommendations
   static Future<MealPlanResult> generateMealPlan({
     int? numMeals,
     int? maxCookTime,
-    List<int>? excludeRecipeIds,
   }) async {
     final token = await getToken();
     if (token == null) {
@@ -253,7 +272,6 @@ class ApiService {
       final body = <String, dynamic>{};
       if (numMeals != null) body['num_meals'] = numMeals;
       if (maxCookTime != null) body['max_cook_time'] = maxCookTime;
-      if (excludeRecipeIds != null) body['exclude_recipe_ids'] = excludeRecipeIds;
 
       final response = await http.post(
         Uri.parse('$baseUrl/meals/plan'),

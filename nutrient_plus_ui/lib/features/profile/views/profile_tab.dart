@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/notification_service.dart';
 import '../viewmodels/profile_viewmodel.dart';
 import '../models/calorie_info.dart';
 
@@ -21,12 +22,19 @@ class ProfileTab extends StatefulWidget {
 class _ProfileTabState extends State<ProfileTab> {
   late ProfileViewModel _viewModel;
   final ImagePicker _imagePicker = ImagePicker();
+  bool _waterRemindersEnabled = false;
 
   @override
   void initState() {
     super.initState();
     _viewModel = ProfileViewModel();
     _viewModel.loadUser();
+    _loadWaterReminderState();
+  }
+
+  Future<void> _loadWaterReminderState() async {
+    final enabled = await NotificationService().isEnabled();
+    if (mounted) setState(() => _waterRemindersEnabled = enabled);
   }
 
   @override
@@ -51,7 +59,7 @@ class _ProfileTabState extends State<ProfileTab> {
                 const SizedBox(height: 24),
                 _buildMealPreferences(viewModel),
                 const SizedBox(height: 24),
-                _buildSyncSettings(),
+                _buildWaterReminders(),
                 const SizedBox(height: 24),
                 _buildSignOutButton(),
                 const SizedBox(height: 8),
@@ -1034,12 +1042,12 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  Widget _buildSyncSettings() {
+  Widget _buildWaterReminders() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Sync & Settings',
+          'Notifications',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
@@ -1047,91 +1055,71 @@ class _ProfileTabState extends State<ProfileTab> {
         ),
         const SizedBox(height: 12),
         Container(
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: Colors.grey[200]!),
           ),
-          child: Column(
+          child: Row(
             children: [
-              _buildSettingsItem(
-                icon: Icons.watch,
-                iconColor: Colors.grey[800]!,
-                title: 'Health Connect',
-                subtitle: 'Sync calories & steps',
-                trailing: Switch(
-                  value: true,
-                  onChanged: (value) {},
-                  activeThumbColor: AppColors.primary,
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  shape: BoxShape.circle,
                 ),
-                showBorder: true,
+                child: Icon(Icons.water_drop, color: Colors.blue[400], size: 20),
               ),
-              _buildSettingsItem(
-                icon: Icons.notifications_active,
-                iconColor: Colors.blue,
-                title: 'Meal Reminders',
-                subtitle: '8:00 AM, 12:00 PM, 6:00 PM',
-                trailing: Icon(Icons.chevron_right, color: Colors.grey[400]),
-                showBorder: false,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Water Reminders',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      'Every 2 hours from 8 AM to 8 PM',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[500],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: _waterRemindersEnabled,
+                onChanged: (value) async {
+                  final service = NotificationService();
+                  if (value) {
+                    final granted = await service.requestPermission();
+                    if (!granted && mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Notification permission denied. Please enable it in Settings.'),
+                        ),
+                      );
+                      return;
+                    }
+                    await service.enableWaterReminders();
+                  } else {
+                    await service.disableWaterReminders();
+                  }
+                  if (mounted) setState(() => _waterRemindersEnabled = value);
+                },
+                activeColor: AppColors.primary,
               ),
             ],
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildSettingsItem({
-    required IconData icon,
-    required Color iconColor,
-    required String title,
-    required String subtitle,
-    required Widget trailing,
-    required bool showBorder,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        border: showBorder
-            ? Border(bottom: BorderSide(color: Colors.grey[100]!))
-            : null,
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.grey[100],
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: iconColor, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[500],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          trailing,
-        ],
-      ),
     );
   }
 

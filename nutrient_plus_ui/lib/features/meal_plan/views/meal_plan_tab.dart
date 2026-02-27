@@ -358,26 +358,6 @@ class _MealPlanTabState extends State<MealPlanTab> {
             return _buildMealCard(viewModel, plan.meals[index], index);
           }),
 
-          const SizedBox(height: 12),
-
-          // Regenerate button
-          if (viewModel.canSwap)
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: viewModel.generatePlan,
-                icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('Regenerate Plan'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.primary,
-                  side: const BorderSide(color: AppColors.primary),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ),
           const SizedBox(height: 80),
         ],
       ),

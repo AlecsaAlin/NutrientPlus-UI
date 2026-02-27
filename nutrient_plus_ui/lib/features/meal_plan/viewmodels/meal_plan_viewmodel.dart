@@ -84,58 +84,13 @@ class MealPlanViewModel extends BaseViewModel {
     notifyListeners();
   }
 
-  /// Collect recipe IDs from a sliding 10-day window ending at the selected date
-  List<int> getRecentRecipeIds() {
-    final today = DateTime.now();
-    final todayOnly = DateTime(today.year, today.month, today.day);
-    final selectedOnly = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
-    final recipeIds = <int>{};
-
-    final daysAhead = selectedOnly.isAfter(todayOnly)
-        ? selectedOnly.difference(todayOnly).inDays
-        : 0;
-
-    final pastDays = (10 - daysAhead).clamp(0, 10);
-
-    // Collect from past
-    for (int i = 1; i <= pastDays; i++) {
-      _collectRecipeIds(todayOnly.subtract(Duration(days: i)), recipeIds);
-    }
-
-    // Collect from today up to (but not including) the selected date
-    for (int i = 0; i < daysAhead; i++) {
-      _collectRecipeIds(todayOnly.add(Duration(days: i)), recipeIds);
-    }
-
-    // If selected date is today or in the past, still include today
-    if (daysAhead == 0) {
-      _collectRecipeIds(todayOnly, recipeIds);
-    }
-
-    return recipeIds.toList();
-  }
-
-  void _collectRecipeIds(DateTime date, Set<int> recipeIds) {
-    final plan = _savedPlans[formatDate(date)];
-    if (plan == null) return;
-    for (final slot in plan.meals) {
-      if (slot.recipe != null) {
-        recipeIds.add(slot.recipe!.recipeId);
-      }
-    }
-  }
-
   /// Generate a new meal plan
   Future<void> generatePlan() async {
     _isGenerating = true;
     _error = null;
     notifyListeners();
 
-    final excludeIds = getRecentRecipeIds();
-
-    final result = await _mealPlanRepository.generateMealPlan(
-      excludeRecipeIds: excludeIds.isNotEmpty ? excludeIds : null,
-    );
+    final result = await _mealPlanRepository.generateMealPlan();
 
     _isGenerating = false;
     if (result.success && result.mealPlan != null) {
@@ -173,6 +128,9 @@ class MealPlanViewModel extends BaseViewModel {
     // Save updated plan to backend
     final dateKey = formatDate(_selectedDate);
     _mealPlanRepository.saveMealPlan(planDate: dateKey, plan: plan);
+
+    // Record the chosen alternative in meal history immediately
+    _mealPlanRepository.addToHistory(recipeId: alternative.recipeId);
   }
 
   /// Check if a date has a plan

@@ -5,12 +5,10 @@ class MealPlanRepository {
   Future<MealPlanResult> generateMealPlan({
     int? numMeals,
     int? maxCookTime,
-    List<int>? excludeRecipeIds,
   }) async =>
       await ApiService.generateMealPlan(
         numMeals: numMeals,
         maxCookTime: maxCookTime,
-        excludeRecipeIds: excludeRecipeIds,
       );
 
   Future<bool> saveMealPlan({
@@ -27,4 +25,7 @@ class MealPlanRepository {
 
   Future<bool> syncMealHistory() async =>
       await ApiService.syncMealHistory();
+
+  Future<bool> addToHistory({required int recipeId}) async =>
+      await ApiService.rateMeal(recipeId: recipeId);
 }
