@@ -1,23 +1,20 @@
 import 'package:health/health.dart';
 import '../../../core/base/base_viewmodel.dart';
+import '../../../core/services/health_service.dart';
 
-/// ViewModel for Watch (Health) screen
 class WatchViewModel extends BaseViewModel {
   final Health _health = Health();
 
   bool _isAuthorized = false;
   int _selectedDayIndex = 0;
 
-  // Health data
   int _steps = 0;
   double _caloriesBurned = 0;
   double _sleepHours = 0;
 
-  // Weekly data for chart
   List<int> _weeklySteps = [0, 0, 0, 0, 0, 0, 0];
   List<double> _weeklyCalories = [0, 0, 0, 0, 0, 0, 0];
 
-  // Health types to read
   static final List<HealthDataType> _types = [
     HealthDataType.STEPS,
     HealthDataType.ACTIVE_ENERGY_BURNED,
@@ -27,7 +24,6 @@ class WatchViewModel extends BaseViewModel {
     HealthDataType.SLEEP_REM,
   ];
 
-  // Getters
   bool get isAuthorized => _isAuthorized;
   int get selectedDayIndex => _selectedDayIndex;
   int get steps => _steps;
@@ -36,7 +32,6 @@ class WatchViewModel extends BaseViewModel {
   List<int> get weeklySteps => _weeklySteps;
   List<double> get weeklyCalories => _weeklyCalories;
 
-  /// Initialize health and load data
   Future<void> initHealth() async {
     setLoading(true);
 
@@ -53,7 +48,6 @@ class WatchViewModel extends BaseViewModel {
     }
   }
 
-  /// Request health permissions
   Future<void> requestPermissions() async {
     setLoading(true);
 
@@ -86,7 +80,6 @@ class WatchViewModel extends BaseViewModel {
     }
   }
 
-  /// Set selected day index and refresh data
   void setSelectedDayIndex(int index) {
     _selectedDayIndex = index;
     notifyListeners();
@@ -97,7 +90,6 @@ class WatchViewModel extends BaseViewModel {
     return DateTime.now().subtract(Duration(days: _selectedDayIndex));
   }
 
-  /// Fetch health data for the selected day
   Future<void> fetchHealthData() async {
     final selectedDate = getSelectedDate();
     final startOfDay = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
@@ -151,7 +143,6 @@ class WatchViewModel extends BaseViewModel {
         }
       }
 
-      // Take the maximum from any single source
       if (stepsBySource.isNotEmpty) {
         steps = stepsBySource.values.reduce((a, b) => a > b ? a : b);
       }
@@ -180,54 +171,32 @@ class WatchViewModel extends BaseViewModel {
     }
   }
 
-  /// Fetch weekly data for charts
   Future<void> fetchWeeklyData() async {
     final now = DateTime.now();
     final sevenDaysAgo = DateTime(now.year, now.month, now.day - 6);
 
-    List<int> weeklySteps = List.filled(7, 0);
     List<double> weeklyCalories = List.filled(7, 0);
 
     try {
-      List<HealthDataPoint> data = await _health.getHealthDataFromTypes(
-        types: [HealthDataType.STEPS, HealthDataType.ACTIVE_ENERGY_BURNED],
+      List<HealthDataPoint> calorieData = await _health.getHealthDataFromTypes(
+        types: [HealthDataType.ACTIVE_ENERGY_BURNED],
         startTime: sevenDaysAgo,
         endTime: now,
       );
+      calorieData = _health.removeDuplicates(calorieData);
 
-      data = _health.removeDuplicates(data);
-
-      // Group steps by day and source to avoid double-counting
-      Map<int, Map<String, int>> stepsByDayAndSource = {};
-
-      for (var point in data) {
+      for (var point in calorieData) {
         final daysDiff = now.difference(DateTime(point.dateFrom.year, point.dateFrom.month, point.dateFrom.day)).inDays;
         final dayIndex = 6 - daysDiff;
-
         if (dayIndex >= 0 && dayIndex < 7) {
-          if (point.type == HealthDataType.STEPS) {
-            final source = point.sourceName;
-            stepsByDayAndSource[dayIndex] ??= {};
-            stepsByDayAndSource[dayIndex]![source] =
-                (stepsByDayAndSource[dayIndex]![source] ?? 0) +
-                (point.value as NumericHealthValue).numericValue.toInt();
-          } else if (point.type == HealthDataType.ACTIVE_ENERGY_BURNED) {
-            weeklyCalories[dayIndex] += (point.value as NumericHealthValue).numericValue.toDouble();
-          }
+          weeklyCalories[dayIndex] += (point.value as NumericHealthValue).numericValue.toDouble();
         }
       }
-
-      // For each day, take the max from any single source
-      for (int i = 0; i < 7; i++) {
-        if (stepsByDayAndSource.containsKey(i) && stepsByDayAndSource[i]!.isNotEmpty) {
-          weeklySteps[i] = stepsByDayAndSource[i]!.values.reduce((a, b) => a > b ? a : b);
-        }
-      }
-    } catch (e) {
-      // Weekly data fetch error
+    } catch (_) {
+      // Weekly calorie fetch error
     }
 
-    _weeklySteps = weeklySteps;
+    _weeklySteps = await HealthService.fetchDailySteps(days: 7);
     _weeklyCalories = weeklyCalories;
     notifyListeners();
   }

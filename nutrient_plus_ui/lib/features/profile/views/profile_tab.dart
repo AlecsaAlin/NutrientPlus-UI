@@ -57,6 +57,8 @@ class _ProfileTabState extends State<ProfileTab> {
                 const SizedBox(height: 24),
                 _buildHealthTargets(viewModel),
                 const SizedBox(height: 24),
+                _buildWeightPrediction(viewModel),
+                const SizedBox(height: 24),
                 _buildMealPreferences(viewModel),
                 const SizedBox(height: 24),
                 _buildWaterReminders(),
@@ -332,6 +334,50 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
+  String _formatSteps(int steps) {
+    return steps.toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (Match m) => '${m[1]},',
+    );
+  }
+
+  Widget _buildStepThresholdRow(String range, String label, bool isActive) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: isActive ? AppColors.primary : Colors.grey[300],
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              range,
+              style: TextStyle(
+                fontSize: 11,
+                color: isActive ? AppColors.primary : Colors.grey[500],
+                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: isActive ? AppColors.primary : Colors.grey[500],
+              fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildGenderSelector(ProfileViewModel viewModel) {
     final selectedGender = viewModel.user?.gender;
 
@@ -411,54 +457,128 @@ class _ProfileTabState extends State<ProfileTab> {
 
   Widget _buildActivityLevelCard(ProfileViewModel viewModel) {
     final currentLevel = ActivityLevel.fromString(viewModel.user?.activityLevel);
+    final isDynamic = viewModel.dynamicActivityEnabled;
+    final isHealthConnected = viewModel.isHealthConnected;
+    final avgSteps = viewModel.weeklyAvgSteps;
+    final detectedLevel = ProfileViewModel.activityLevelFromSteps(avgSteps);
 
-    return GestureDetector(
-      onTap: () => _showActivityLevelDialog(viewModel),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.grey[200]!),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDynamic ? AppColors.primary.withValues(alpha: 0.4) : Colors.grey[200]!,
+          width: isDynamic ? 1.5 : 1,
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.directions_run, size: 18, color: Colors.orange[600]),
-                const SizedBox(width: 8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.directions_run, size: 18, color: Colors.orange[600]),
+              const SizedBox(width: 8),
+              Text(
+                'ACTIVITY LEVEL',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[500],
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const Spacer(),
+              if (isHealthConnected) ...[
                 Text(
-                  'ACTIVITY LEVEL',
+                  'Auto',
                   style: TextStyle(
                     fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey[500],
-                    letterSpacing: 0.5,
+                    color: isDynamic ? AppColors.primary : Colors.grey[400],
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                const Spacer(),
-                Icon(Icons.edit, size: 14, color: Colors.grey[400]),
-              ],
-            ),
+                const SizedBox(width: 6),
+                SizedBox(
+                  height: 24,
+                  child: Switch.adaptive(
+                    value: isDynamic,
+                    onChanged: (val) => viewModel.setDynamicActivityEnabled(val),
+                    activeColor: AppColors.primary,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ] else
+                GestureDetector(
+                  onTap: () => _showActivityLevelDialog(viewModel),
+                  child: Icon(Icons.edit, size: 14, color: Colors.grey[400]),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      currentLevel.label,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      isDynamic
+                          ? 'Based on ${_formatSteps(avgSteps)} avg steps/day'
+                          : currentLevel.description,
+                      style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+                    ),
+                  ],
+                ),
+              ),
+              if (!isDynamic && isHealthConnected)
+                GestureDetector(
+                  onTap: () => _showActivityLevelDialog(viewModel),
+                  child: Icon(Icons.edit, size: 14, color: Colors.grey[400]),
+                ),
+            ],
+          ),
+          if (isDynamic) ...[
             const SizedBox(height: 12),
-            Text(
-              currentLevel.label,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.primaryWithOpacity(0.05),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                children: [
+                  _buildStepThresholdRow('< 6,000', 'Sedentary', avgSteps < 6000),
+                  _buildStepThresholdRow('6,000 – 8,999', 'Lightly Active', avgSteps >= 6000 && avgSteps < 9000),
+                  _buildStepThresholdRow('9,000 – 11,999', 'Moderately Active', avgSteps >= 9000 && avgSteps < 12000),
+                  _buildStepThresholdRow('12,000 – 14,999', 'Very Active', avgSteps >= 12000 && avgSteps < 15000),
+                  _buildStepThresholdRow('≥ 15,000', 'Extra Active', avgSteps >= 15000),
+                ],
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              currentLevel.description,
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.grey[500],
+            if (detectedLevel != currentLevel)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Updating to ${detectedLevel.label}...',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.primary,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
               ),
-            ),
           ],
-        ),
+        ],
+
       ),
     );
   }
@@ -514,6 +634,177 @@ class _ProfileTabState extends State<ProfileTab> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildWeightPrediction(ProfileViewModel viewModel) {
+    final user = viewModel.user;
+    final calorie = viewModel.calorieInfo;
+    final goalType = GoalType.fromString(user?.goalType);
+
+    if (goalType == GoalType.maintain ||
+        user?.currentWeight == null ||
+        user?.goalWeight == null ||
+        calorie == null) {
+      return const SizedBox.shrink();
+    }
+
+    final dailyDiff = calorie.tdee - calorie.dailyCalories;
+    final kgDiff = (user!.currentWeight! - user.goalWeight!).abs();
+
+    if (dailyDiff.abs() < 1) return const SizedBox.shrink();
+
+    final days = (kgDiff * 7700) / dailyDiff.abs();
+    final targetDate = DateTime.now().add(Duration(days: days.round()));
+    final weeks = (days / 7).round();
+    final months = (days / 30.44).round();
+
+    final isLoss = user.currentWeight! > user.goalWeight!;
+    final color = isLoss ? Colors.orange[600]! : Colors.green[600]!;
+    final bgColor = isLoss ? Colors.orange[50]! : Colors.green[50]!;
+    final icon = isLoss ? Icons.trending_down : Icons.trending_up;
+
+    String timeLabel;
+    if (weeks < 4) {
+      timeLabel = '$weeks week${weeks == 1 ? '' : 's'}';
+    } else if (months < 12) {
+      timeLabel = '$months month${months == 1 ? '' : 's'}';
+    } else {
+      final years = (months / 12).toStringAsFixed(1);
+      timeLabel = '$years year${months < 24 ? '' : 's'}';
+    }
+
+    final monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final dateLabel =
+        '${monthNames[targetDate.month - 1]} ${targetDate.day}, ${targetDate.year}';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Weight Prediction',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey[200]!),
+          ),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: bgColor,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon, color: color, size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isLoss ? 'Estimated to reach goal weight' : 'Estimated to reach goal weight',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          '${user.currentWeight!.toStringAsFixed(1)} kg → ${user.goalWeight!.toStringAsFixed(1)} kg',
+                          style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildPredictionStat(
+                      label: 'Time needed',
+                      value: timeLabel,
+                      color: color,
+                    ),
+                  ),
+                  Container(width: 1, height: 40, color: Colors.grey[200]),
+                  Expanded(
+                    child: _buildPredictionStat(
+                      label: 'Target date',
+                      value: dateLabel,
+                      color: color,
+                    ),
+                  ),
+                  Container(width: 1, height: 40, color: Colors.grey[200]),
+                  Expanded(
+                    child: _buildPredictionStat(
+                      label: 'Daily ${isLoss ? 'deficit' : 'surplus'}',
+                      value: '${dailyDiff.abs().toStringAsFixed(0)} kcal',
+                      color: color,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 14, color: Colors.grey[400]),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'This is an estimate. Real results vary based on metabolism and consistency.',
+                        style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPredictionStat({
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Column(
+      children: [
+        Text(
+          value,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 10, color: Colors.grey[500]),
+        ),
+      ],
     );
   }
 
