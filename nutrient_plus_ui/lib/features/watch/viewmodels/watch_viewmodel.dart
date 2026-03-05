@@ -37,13 +37,22 @@ class WatchViewModel extends BaseViewModel {
 
     try {
       await _health.configure();
-      await fetchHealthData();
-      await fetchWeeklyData();
 
-      _isAuthorized = true;
-      setLoading(false);
+      final hasPerms = await _health.hasPermissions(
+        _types,
+        permissions: _types.map((e) => HealthDataAccess.READ).toList(),
+      );
+
+      if (hasPerms == true) {
+        _isAuthorized = true;
+        await fetchHealthData();
+        await fetchWeeklyData();
+      } else {
+        _isAuthorized = false;
+      }
     } catch (e) {
       _isAuthorized = false;
+    } finally {
       setLoading(false);
     }
   }

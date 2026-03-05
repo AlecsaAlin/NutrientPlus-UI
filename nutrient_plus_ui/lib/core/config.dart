@@ -1,7 +1,3 @@
-// Local configuration - DO NOT COMMIT THIS FILE
-// Change the IP to your server's IP address
-
 class AppConfig {
-  static const String serverIP = '192.168.81.167';
-  static const int serverPort = 8000;
+  static const String baseUrl = 'https://nutrientplus-backend.kindplant-de7a2df8.germanywestcentral.azurecontainerapps.io/api';
 }

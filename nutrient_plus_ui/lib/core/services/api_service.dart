@@ -8,7 +8,7 @@ import '../config.dart';
 
 class ApiService {
   static String get baseUrl {
-    return 'http://${AppConfig.serverIP}:${AppConfig.serverPort}/api';
+    return AppConfig.baseUrl;
   }
 
   static String? _token;
@@ -77,20 +77,26 @@ class ApiService {
         }),
       );
 
-      final data = jsonDecode(response.body);
-
       if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
         await _saveToken(data['access_token']);
         _currentUser = User.fromJson(data['user']);
         return AuthResult(success: true, user: _currentUser);
+      } else if (response.statusCode >= 500) {
+        return AuthResult(success: false, error: 'Server error. Please try again later.');
       } else {
-        return AuthResult(
-          success: false,
-          error: _extractError(data['detail'], 'Registration failed'),
-        );
+        try {
+          final data = jsonDecode(response.body);
+          return AuthResult(
+            success: false,
+            error: _extractError(data['detail'], 'Registration failed'),
+          );
+        } catch (_) {
+          return AuthResult(success: false, error: 'Registration failed (${response.statusCode})');
+        }
       }
     } catch (e) {
-      return AuthResult(success: false, error: 'Connection error: $e');
+      return AuthResult(success: false, error: 'Unable to connect to server. Please check your internet connection.');
     }
   }
 
@@ -108,20 +114,26 @@ class ApiService {
         }),
       );
 
-      final data = jsonDecode(response.body);
-
       if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
         await _saveToken(data['access_token']);
         _currentUser = User.fromJson(data['user']);
         return AuthResult(success: true, user: _currentUser);
+      } else if (response.statusCode >= 500) {
+        return AuthResult(success: false, error: 'Server error. Please try again later.');
       } else {
-        return AuthResult(
-          success: false,
-          error: _extractError(data['detail'], 'Login failed'),
-        );
+        try {
+          final data = jsonDecode(response.body);
+          return AuthResult(
+            success: false,
+            error: _extractError(data['detail'], 'Login failed'),
+          );
+        } catch (_) {
+          return AuthResult(success: false, error: 'Login failed (${response.statusCode})');
+        }
       }
     } catch (e) {
-      return AuthResult(success: false, error: 'Connection error: $e');
+      return AuthResult(success: false, error: 'Unable to connect to server. Please check your internet connection.');
     }
   }
 
@@ -166,6 +178,7 @@ class ApiService {
     int? age,
     String? activityLevel,
     String? goalType,
+    int? goalTimeline,
     int? preferredMealsPerDay,
     int? maxCookTime,
     bool clearMaxCookTime = false,
@@ -185,6 +198,7 @@ class ApiService {
       if (age != null) body['age'] = age;
       if (activityLevel != null) body['activity_level'] = activityLevel;
       if (goalType != null) body['goal_type'] = goalType;
+      if (goalTimeline != null) body['goal_timeline'] = goalTimeline;
       if (preferredMealsPerDay != null) body['preferred_meals_per_day'] = preferredMealsPerDay;
       if (clearMaxCookTime) {
         body['max_cook_time'] = null;
@@ -247,15 +261,21 @@ class ApiService {
       if (response.statusCode == 200) {
         final calorieInfo = CalorieInfo.fromJson(jsonDecode(response.body));
         return CalorieResult(success: true, calorieInfo: calorieInfo);
+      } else if (response.statusCode >= 500) {
+        return CalorieResult(success: false, error: 'Server error. Please try again later.');
       } else {
-        final data = jsonDecode(response.body);
-        return CalorieResult(
-          success: false,
-          error: data['detail'] ?? 'Failed to get calorie info',
-        );
+        try {
+          final data = jsonDecode(response.body);
+          return CalorieResult(
+            success: false,
+            error: data['detail'] ?? 'Failed to get calorie info',
+          );
+        } catch (_) {
+          return CalorieResult(success: false, error: 'Failed to get calorie info (${response.statusCode})');
+        }
       }
     } catch (e) {
-      return CalorieResult(success: false, error: 'Connection error: $e');
+      return CalorieResult(success: false, error: 'Unable to connect to server.');
     }
   }
 
@@ -285,15 +305,21 @@ class ApiService {
       if (response.statusCode == 200) {
         final mealPlan = MealPlanResponse.fromJson(jsonDecode(response.body));
         return MealPlanResult(success: true, mealPlan: mealPlan);
+      } else if (response.statusCode >= 500) {
+        return MealPlanResult(success: false, error: 'Server error. Please try again later.');
       } else {
-        final data = jsonDecode(response.body);
-        return MealPlanResult(
-          success: false,
-          error: data['detail'] ?? 'Failed to generate meal plan',
-        );
+        try {
+          final data = jsonDecode(response.body);
+          return MealPlanResult(
+            success: false,
+            error: data['detail'] ?? 'Failed to generate meal plan',
+          );
+        } catch (_) {
+          return MealPlanResult(success: false, error: 'Failed to generate meal plan (${response.statusCode})');
+        }
       }
     } catch (e) {
-      return MealPlanResult(success: false, error: 'Connection error: $e');
+      return MealPlanResult(success: false, error: 'Unable to connect to server. Please check your internet connection.');
     }
   }
 
