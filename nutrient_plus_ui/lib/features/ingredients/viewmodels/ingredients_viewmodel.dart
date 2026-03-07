@@ -63,6 +63,16 @@ class IngredientsViewModel extends BaseViewModel {
     notifyListeners();
   }
 
+  Future<void> addAllSearchResults({required bool isLiked}) async {
+    final toAdd = _ingredientSearchResults
+        .where((i) => isLiked
+            ? !_likedIngredients.contains(i)
+            : !_excludedIngredients.contains(i))
+        .toList();
+    await Future.wait(toAdd.map((i) =>
+        isLiked ? addLikedIngredient(i) : addExcludedIngredient(i)));
+  }
+
   Future<bool> addExcludedIngredient(String ingredient) async {
     if (_excludedIngredients.contains(ingredient)) return true;
 

@@ -6,6 +6,7 @@ import '../../../core/utils/text_helpers.dart';
 import '../../meal_plan/models/meal_models.dart' show RecipeDetail;
 import '../viewmodels/saved_viewmodel.dart';
 
+
 class SavedRecipesTab extends StatefulWidget {
   const SavedRecipesTab({super.key});
 
@@ -166,7 +167,7 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
         child: const Icon(Icons.delete, color: Colors.white),
       ),
       child: GestureDetector(
-        onTap: () => _onRecipeTap(viewModel, fav.recipeId),
+        onTap: () => _onRecipeTap(viewModel, fav.recipeId, fav: fav),
         child: Container(
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(16),
@@ -463,7 +464,7 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
   }
 
 
-  Future<void> _onRecipeTap(SavedViewModel viewModel, int recipeId) async {
+  Future<void> _onRecipeTap(SavedViewModel viewModel, int recipeId, {FavoriteRecipe? fav}) async {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -472,7 +473,7 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
 
     final recipe = await viewModel.getRecipeById(recipeId);
     if (!mounted) return;
-    Navigator.pop(context); 
+    Navigator.pop(context);
 
     if (recipe == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -481,10 +482,48 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
       return;
     }
 
-    _showRecipeDetails(recipe);
+    _showRecipeDetails(viewModel, recipe, fav: fav);
   }
 
-  void _showRecipeDetails(RecipeDetail recipe) {
+  Future<void> _showPlanMealFlow(SavedViewModel viewModel, FavoriteRecipe fav) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    final date = await showDatePicker(
+      context: context,
+      initialDate: today,
+      firstDate: today,
+      lastDate: today.add(const Duration(days: 90)),
+      helpText: 'Select a day to plan this meal',
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.light(primary: AppColors.primary),
+        ),
+        child: child!,
+      ),
+    );
+
+    if (date == null || !mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final success = await viewModel.scheduleForDate(fav: fav, date: date);
+    if (!mounted) return;
+    Navigator.pop(context);
+
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(success
+          ? '${fav.recipeName} added to your plan on ${date.day}/${date.month}/${date.year}'
+          : 'Failed to schedule meal. Please try again.'),
+      backgroundColor: success ? AppColors.primary : Colors.red,
+    ));
+  }
+
+  void _showRecipeDetails(SavedViewModel viewModel, RecipeDetail recipe, {FavoriteRecipe? fav}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -607,6 +646,27 @@ class _SavedRecipesTabState extends State<SavedRecipesTab>
                   ),
                 ],
                 const SizedBox(height: 24),
+                if (fav != null)
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _showPlanMealFlow(viewModel, fav);
+                      },
+                      icon: const Icon(Icons.calendar_month),
+                      label: const Text('Plan This Meal'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 16),
               ],
             ),
           );

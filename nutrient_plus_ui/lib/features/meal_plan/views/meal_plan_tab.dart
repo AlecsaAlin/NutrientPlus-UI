@@ -323,27 +323,59 @@ class _MealPlanTabState extends State<MealPlanTab> {
                   ),
                 ],
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryWithOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.local_fire_department,
-                        color: AppColors.primary, size: 20),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${plan.dailyCalorieTarget.toInt()} kcal',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.primary,
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryWithOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.local_fire_department,
+                            color: AppColors.primary, size: 20),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${plan.dailyCalorieTarget.toInt()} kcal',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (viewModel.canSwap) ...[
+                    const SizedBox(width: 8),
+                    Tooltip(
+                      message: 'Regenerate plan',
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: viewModel.isGenerating ? null : viewModel.generatePlan,
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryWithOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: viewModel.isGenerating
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppColors.primary,
+                                  ),
+                                )
+                              : const Icon(Icons.refresh,
+                                  color: AppColors.primary, size: 20),
+                        ),
                       ),
                     ),
                   ],
-                ),
+                ],
               ),
             ],
           ),

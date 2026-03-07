@@ -203,8 +203,6 @@ class _OnboardingSurveyScreenState extends State<OnboardingSurveyScreen> {
     switch (step.field) {
       case 'goalType':
         return _buildGoalTypeSelector(vm);
-      case 'goalTimeline':
-        return _buildGoalTimelineSelector(vm);
       case 'gender':
         return _buildGenderSelector(vm);
       case 'age':
@@ -245,6 +243,8 @@ class _OnboardingSurveyScreenState extends State<OnboardingSurveyScreen> {
         return _buildMealsPerDaySelector(vm);
       case 'maxCookTime':
         return _buildCookTimeSelector(vm);
+      case 'mealPreferences':
+        return _buildMealPreferencesSelector(vm);
       default:
         return const SizedBox();
     }
@@ -267,28 +267,6 @@ class _OnboardingSurveyScreenState extends State<OnboardingSurveyScreen> {
           description: opt.$4,
           selected: selected,
           onTap: () => vm.setGoalType(opt.$1),
-        );
-      }).toList(),
-    );
-  }
-
-  Widget _buildGoalTimelineSelector(OnboardingSurveyViewModel vm) {
-    final options = [
-      (4, Icons.calendar_month_rounded, '4 Weeks', 'Quick start'),
-      (8, Icons.calendar_today_rounded, '8 Weeks', 'Steady progress'),
-      (12, Icons.event_rounded, '12 Weeks', 'Sustainable'),
-      (16, Icons.date_range_rounded, '16 Weeks', 'Long term'),
-    ];
-
-    return Column(
-      children: options.map((opt) {
-        final selected = vm.goalTimeline == opt.$1;
-        return _OptionCard(
-          icon: opt.$2,
-          label: opt.$3,
-          description: opt.$4,
-          selected: selected,
-          onTap: () => vm.setGoalTimeline(opt.$1),
         );
       }).toList(),
     );
@@ -344,6 +322,7 @@ class _OnboardingSurveyScreenState extends State<OnboardingSurveyScreen> {
     return Wrap(
       spacing: 12,
       runSpacing: 12,
+      alignment: WrapAlignment.center,
       children: List.generate(2, (i) {
         final value = i + 3;
         final selected = vm.preferredMealsPerDay == value;
@@ -407,6 +386,130 @@ class _OnboardingSurveyScreenState extends State<OnboardingSurveyScreen> {
           description: opt.$4,
           selected: selected,
           onTap: () => vm.setMaxCookTime(opt.$1),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildMealPreferencesSelector(OnboardingSurveyViewModel vm) {
+    if (vm.isMealPreferencesLoading && vm.mealPreferenceIds.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: CircularProgressIndicator(color: AppColors.primary),
+        ),
+      );
+    }
+
+    return Column(
+      children: vm.mealPreferenceIds.asMap().entries.map((entry) {
+        final idx = entry.key;
+        final recipeId = entry.value;
+        final detail = vm.mealPreferenceDetails.length > idx
+            ? vm.mealPreferenceDetails[idx]
+            : null;
+        final selection = vm.mealPreferenceSelections[recipeId];
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selection == null
+                  ? Colors.grey.shade200
+                  : selection
+                      ? AppColors.primary
+                      : Colors.grey.shade400,
+              width: selection != null ? 2 : 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: detail == null
+                    ? const SizedBox(
+                        height: 36,
+                        child: Center(
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            detail.name,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${detail.calories.round()} kcal · ${detail.proteinG.round()}g P · ${detail.carbsG.round()}g C · ${detail.fatG.round()}g F',
+                            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                          ),
+                        ],
+                      ),
+              ),
+              const SizedBox(width: 12),
+              GestureDetector(
+                onTap: () => vm.setMealPreference(recipeId, true),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: selection == true
+                        ? AppColors.primary
+                        : Colors.grey.shade100,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.thumb_up_rounded,
+                    size: 18,
+                    color: selection == true ? Colors.white : Colors.grey.shade400,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => vm.setMealPreference(recipeId, false),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: selection == false
+                        ? Colors.grey.shade500
+                        : Colors.grey.shade100,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.thumb_down_rounded,
+                    size: 18,
+                    color: selection == false ? Colors.white : Colors.grey.shade400,
+                  ),
+                ),
+              ),
+            ],
+          ),
         );
       }).toList(),
     );

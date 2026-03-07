@@ -156,19 +156,28 @@ class WatchViewModel extends BaseViewModel {
         steps = stepsBySource.values.reduce((a, b) => a > b ? a : b);
       }
 
-      Set<String> processedSleepSessions = {};
-      for (var point in sleepData) {
-        final key = '${point.dateFrom.toIso8601String()}-${point.dateTo.toIso8601String()}';
-        if (point.type == HealthDataType.SLEEP_ASLEEP ||
-            point.type == HealthDataType.SLEEP_LIGHT ||
-            point.type == HealthDataType.SLEEP_DEEP ||
-            point.type == HealthDataType.SLEEP_REM) {
-          if (!processedSleepSessions.contains(key)) {
-            processedSleepSessions.add(key);
-            final duration = point.dateTo.difference(point.dateFrom);
-            sleepMinutes += duration.inMinutes;
-          }
+      final sleepTypes = {
+        HealthDataType.SLEEP_ASLEEP,
+        HealthDataType.SLEEP_LIGHT,
+        HealthDataType.SLEEP_DEEP,
+        HealthDataType.SLEEP_REM,
+      };
+      final intervals = sleepData
+          .where((p) => sleepTypes.contains(p.type))
+          .map((p) => [p.dateFrom, p.dateTo])
+          .toList()
+        ..sort((a, b) => a[0].compareTo(b[0]));
+
+      final merged = <List<DateTime>>[];
+      for (final iv in intervals) {
+        if (merged.isEmpty || iv[0].isAfter(merged.last[1])) {
+          merged.add([iv[0], iv[1]]);
+        } else if (iv[1].isAfter(merged.last[1])) {
+          merged.last[1] = iv[1];
         }
+      }
+      for (final iv in merged) {
+        sleepMinutes += iv[1].difference(iv[0]).inMinutes;
       }
 
       _steps = steps;

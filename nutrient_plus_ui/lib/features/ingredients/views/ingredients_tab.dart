@@ -243,45 +243,103 @@ class _IngredientsTabState extends State<IngredientsTab>
                 ],
               ),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 280),
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: searchCount,
-                  separatorBuilder: (context, index) =>
-                      Divider(height: 1, color: Colors.grey[100]),
-                  itemBuilder: (context, index) {
-                    final ingredient =
-                        viewModel.ingredientSearchResults[index];
-                    final alreadyAdded = list.contains(ingredient);
-                    return ListTile(
-                      dense: true,
-                      title: Text(ingredient,
-                          style: const TextStyle(fontSize: 14)),
-                      trailing: alreadyAdded
-                          ? Icon(Icons.check_circle, color: color, size: 20)
-                          : Icon(addIcon, color: Colors.grey[400], size: 20),
-                      onTap: alreadyAdded
-                          ? null
-                          : () async {
-                              final messenger = ScaffoldMessenger.of(context);
-                              if (isLiked) {
-                                await viewModel.addLikedIngredient(ingredient);
-                              } else {
-                                await viewModel.addExcludedIngredient(ingredient);
-                              }
-                              _searchController.clear();
-                              viewModel.clearIngredientSearch();
-                              setState(() {});
-                              messenger.showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                      '"$ingredient" added to ${isLiked ? 'liked' : 'excluded'} list'),
-                                  duration: const Duration(seconds: 2),
+                constraints: const BoxConstraints(maxHeight: 320),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (searchCount > 1) ...[
+                      InkWell(
+                        borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(12)),
+                        onTap: () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          final count = viewModel.ingredientSearchResults
+                              .where((i) => !list.contains(i))
+                              .length;
+                          await viewModel.addAllSearchResults(isLiked: isLiked);
+                          _searchController.clear();
+                          viewModel.clearIngredientSearch();
+                          setState(() {});
+                          messenger.showSnackBar(SnackBar(
+                            content: Text(
+                                '$count ingredient${count == 1 ? '' : 's'} added to ${isLiked ? 'liked' : 'excluded'} list'),
+                            duration: const Duration(seconds: 2),
+                          ));
+                        },
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: 0.07),
+                            borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(12)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.select_all, color: color, size: 18),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Add all $searchCount results',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: color,
                                 ),
-                              );
-                            },
-                    );
-                  },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Divider(height: 1, color: Colors.grey[200]),
+                    ],
+                    Flexible(
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: searchCount,
+                        separatorBuilder: (context, index) =>
+                            Divider(height: 1, color: Colors.grey[100]),
+                        itemBuilder: (context, index) {
+                          final ingredient =
+                              viewModel.ingredientSearchResults[index];
+                          final alreadyAdded = list.contains(ingredient);
+                          return ListTile(
+                            dense: true,
+                            title: Text(ingredient,
+                                style: const TextStyle(fontSize: 14)),
+                            trailing: alreadyAdded
+                                ? Icon(Icons.check_circle,
+                                    color: color, size: 20)
+                                : Icon(addIcon,
+                                    color: Colors.grey[400], size: 20),
+                            onTap: alreadyAdded
+                                ? null
+                                : () async {
+                                    final messenger =
+                                        ScaffoldMessenger.of(context);
+                                    if (isLiked) {
+                                      await viewModel
+                                          .addLikedIngredient(ingredient);
+                                    } else {
+                                      await viewModel
+                                          .addExcludedIngredient(ingredient);
+                                    }
+                                    _searchController.clear();
+                                    viewModel.clearIngredientSearch();
+                                    setState(() {});
+                                    messenger.showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                            '"$ingredient" added to ${isLiked ? 'liked' : 'excluded'} list'),
+                                        duration: const Duration(seconds: 2),
+                                      ),
+                                    );
+                                  },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

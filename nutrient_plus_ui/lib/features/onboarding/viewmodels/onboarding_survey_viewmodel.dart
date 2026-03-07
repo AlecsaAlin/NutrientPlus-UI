@@ -1,5 +1,8 @@
+import 'dart:math';
 import '../../../core/base/base_viewmodel.dart';
 import '../../../core/repositories/user_repository.dart';
+import '../../../core/services/api_service.dart' show ApiService;
+import '../../meal_plan/models/meal_models.dart' show RecipeDetail;
 
 enum SurveyStepType { cardSelection, numberInput, chipRow }
 
@@ -32,9 +35,18 @@ class OnboardingSurveyViewModel extends BaseViewModel {
   String? _activityLevel;
   int? _preferredMealsPerDay;
   int? _maxCookTime;
-  int? _goalTimeline; 
 
   int _currentStepIndex = 0;
+
+  static const List<int> _coldStartMealIds = [
+    45809, 27208, 39087, 35813, 67256, 54257, 22782, 32204,
+    25690, 69173, 73440, 68955, 33919, 82102, 25885, 85629,
+  ];
+
+  List<int> _mealPreferenceIds = [];
+  List<RecipeDetail?> _mealPreferenceDetails = [];
+  Map<int, bool> _mealPreferenceSelections = {};
+  bool _isMealPreferencesLoading = false;
 
   String? get goalType => _goalType;
   String? get gender => _gender;
@@ -45,8 +57,12 @@ class OnboardingSurveyViewModel extends BaseViewModel {
   String? get activityLevel => _activityLevel;
   int? get preferredMealsPerDay => _preferredMealsPerDay;
   int? get maxCookTime => _maxCookTime;
-  int? get goalTimeline => _goalTimeline;
   int get currentStepIndex => _currentStepIndex;
+
+  List<int> get mealPreferenceIds => _mealPreferenceIds;
+  List<RecipeDetail?> get mealPreferenceDetails => _mealPreferenceDetails;
+  Map<int, bool> get mealPreferenceSelections => _mealPreferenceSelections;
+  bool get isMealPreferencesLoading => _isMealPreferencesLoading;
 
   static const List<SurveyStep> _allSteps = [
     SurveyStep(
@@ -54,12 +70,6 @@ class OnboardingSurveyViewModel extends BaseViewModel {
       subtitle: "We'll personalize your meal plan around it",
       type: SurveyStepType.cardSelection,
       field: 'goalType',
-    ),
-    SurveyStep(
-      question: "When do you want to reach it?",
-      subtitle: "Set a realistic timeline",
-      type: SurveyStepType.cardSelection,
-      field: 'goalTimeline',
     ),
     SurveyStep(
       question: "What's your gender?",
@@ -109,6 +119,12 @@ class OnboardingSurveyViewModel extends BaseViewModel {
       type: SurveyStepType.cardSelection,
       field: 'maxCookTime',
     ),
+    SurveyStep(
+      question: "Which of these would you eat?",
+      subtitle: "Helps us personalize your recommendations from day one",
+      type: SurveyStepType.cardSelection,
+      field: 'mealPreferences',
+    ),
   ];
 
   List<SurveyStep> get activeSteps {
@@ -125,8 +141,6 @@ class OnboardingSurveyViewModel extends BaseViewModel {
     switch (currentStep.field) {
       case 'goalType':
         return _goalType != null;
-      case 'goalTimeline':
-        return _goalTimeline != null;
       case 'gender':
         return _gender != null;
       case 'age':
@@ -143,6 +157,10 @@ class OnboardingSurveyViewModel extends BaseViewModel {
         return _preferredMealsPerDay != null;
       case 'maxCookTime':
         return true;
+      case 'mealPreferences':
+        return !_isMealPreferencesLoading &&
+            _mealPreferenceIds.isNotEmpty &&
+            _mealPreferenceSelections.length == _mealPreferenceIds.length;
       default:
         return false;
     }
@@ -150,11 +168,6 @@ class OnboardingSurveyViewModel extends BaseViewModel {
 
   void setGoalType(String value) {
     _goalType = value;
-    notifyListeners();
-  }
-
-  void setGoalTimeline(int value) {
-    _goalTimeline = value;
     notifyListeners();
   }
 
@@ -198,11 +211,40 @@ class OnboardingSurveyViewModel extends BaseViewModel {
     notifyListeners();
   }
 
+  void setMealPreference(int recipeId, bool liked) {
+    _mealPreferenceSelections[recipeId] = liked;
+    notifyListeners();
+  }
+
+  Future<void> loadMealPreferences() async {
+    if (_mealPreferenceIds.isNotEmpty) return;
+    _isMealPreferencesLoading = true;
+    notifyListeners();
+
+    final shuffled = List<int>.from(_coldStartMealIds)..shuffle(Random());
+    _mealPreferenceIds = shuffled.take(5).toList();
+    _mealPreferenceDetails = List<RecipeDetail?>.filled(5, null);
+
+    await Future.wait(
+      _mealPreferenceIds.asMap().entries.map((entry) async {
+        final detail = await ApiService.getRecipeById(recipeId: entry.value);
+        _mealPreferenceDetails[entry.key] = detail;
+        notifyListeners();
+      }),
+    );
+
+    _isMealPreferencesLoading = false;
+    notifyListeners();
+  }
+
   void nextStep() {
     if (_currentStepIndex < totalSteps - 1) {
       _currentStepIndex++;
       clearError();
       notifyListeners();
+      if (currentStep.field == 'mealPreferences') {
+        loadMealPreferences();
+      }
     }
   }
 
@@ -211,6 +253,9 @@ class OnboardingSurveyViewModel extends BaseViewModel {
       _currentStepIndex--;
       clearError();
       notifyListeners();
+      if (currentStep.field == 'mealPreferences') {
+        loadMealPreferences();
+      }
     }
   }
 
@@ -221,7 +266,6 @@ class OnboardingSurveyViewModel extends BaseViewModel {
     try {
       final result = await _userRepository.updateProfile(
         goalType: _goalType,
-        goalTimeline: _goalTimeline,
         gender: _gender,
         age: _age,
         height: _height,
@@ -233,14 +277,20 @@ class OnboardingSurveyViewModel extends BaseViewModel {
         clearMaxCookTime: _maxCookTime == null,
       );
 
-      setLoading(false);
-
-      if (result.success) {
-        return true;
-      } else {
+      if (!result.success) {
+        setLoading(false);
         setError(result.error ?? 'Failed to save profile');
         return false;
       }
+
+      await Future.wait(
+        _mealPreferenceSelections.entries
+            .where((e) => e.value == true)
+            .map((e) => ApiService.rateMeal(recipeId: e.key)),
+      );
+
+      setLoading(false);
+      return true;
     } catch (e) {
       setLoading(false);
       setError('Connection error: $e');
