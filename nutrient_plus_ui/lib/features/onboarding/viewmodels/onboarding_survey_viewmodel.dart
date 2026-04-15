@@ -1,7 +1,7 @@
 import 'dart:math';
 import '../../../core/base/base_viewmodel.dart';
 import '../../../core/repositories/user_repository.dart';
-import '../../../core/services/api_service.dart' show ApiService;
+import '../../../core/services/meal_service.dart';
 import '../../meal_plan/models/meal_models.dart' show RecipeDetail;
 
 enum SurveyStepType { cardSelection, numberInput, chipRow }
@@ -35,6 +35,7 @@ class OnboardingSurveyViewModel extends BaseViewModel {
   String? _activityLevel;
   int? _preferredMealsPerDay;
   int? _maxCookTime;
+  String? _explorationPreference;
 
   int _currentStepIndex = 0;
 
@@ -57,6 +58,7 @@ class OnboardingSurveyViewModel extends BaseViewModel {
   String? get activityLevel => _activityLevel;
   int? get preferredMealsPerDay => _preferredMealsPerDay;
   int? get maxCookTime => _maxCookTime;
+  String? get explorationPreference => _explorationPreference;
   int get currentStepIndex => _currentStepIndex;
 
   List<int> get mealPreferenceIds => _mealPreferenceIds;
@@ -120,6 +122,12 @@ class OnboardingSurveyViewModel extends BaseViewModel {
       field: 'maxCookTime',
     ),
     SurveyStep(
+      question: "How do you like to discover meals?",
+      subtitle: "This shapes how we pick recipes for you",
+      type: SurveyStepType.cardSelection,
+      field: 'explorationPreference',
+    ),
+    SurveyStep(
       question: "Which of these would you eat?",
       subtitle: "Helps us personalize your recommendations from day one",
       type: SurveyStepType.cardSelection,
@@ -157,6 +165,8 @@ class OnboardingSurveyViewModel extends BaseViewModel {
         return _preferredMealsPerDay != null;
       case 'maxCookTime':
         return true;
+      case 'explorationPreference':
+        return _explorationPreference != null;
       case 'mealPreferences':
         return !_isMealPreferencesLoading &&
             _mealPreferenceIds.isNotEmpty &&
@@ -211,6 +221,11 @@ class OnboardingSurveyViewModel extends BaseViewModel {
     notifyListeners();
   }
 
+  void setExplorationPreference(String value) {
+    _explorationPreference = value;
+    notifyListeners();
+  }
+
   void setMealPreference(int recipeId, bool liked) {
     _mealPreferenceSelections[recipeId] = liked;
     notifyListeners();
@@ -227,7 +242,7 @@ class OnboardingSurveyViewModel extends BaseViewModel {
 
     await Future.wait(
       _mealPreferenceIds.asMap().entries.map((entry) async {
-        final detail = await ApiService.getRecipeById(recipeId: entry.value);
+        final detail = await MealService.getRecipeById(recipeId: entry.value);
         _mealPreferenceDetails[entry.key] = detail;
         notifyListeners();
       }),
@@ -275,6 +290,7 @@ class OnboardingSurveyViewModel extends BaseViewModel {
         preferredMealsPerDay: _preferredMealsPerDay,
         maxCookTime: _maxCookTime,
         clearMaxCookTime: _maxCookTime == null,
+        explorationPreference: _explorationPreference,
       );
 
       if (!result.success) {
@@ -286,7 +302,7 @@ class OnboardingSurveyViewModel extends BaseViewModel {
       await Future.wait(
         _mealPreferenceSelections.entries
             .where((e) => e.value == true)
-            .map((e) => ApiService.rateMeal(recipeId: e.key)),
+            .map((e) => MealService.rateMeal(recipeId: e.key)),
       );
 
       setLoading(false);

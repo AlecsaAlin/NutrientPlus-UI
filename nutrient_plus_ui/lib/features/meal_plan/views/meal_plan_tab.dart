@@ -353,7 +353,21 @@ class _MealPlanTabState extends State<MealPlanTab> {
                       message: 'Regenerate plan',
                       child: InkWell(
                         borderRadius: BorderRadius.circular(12),
-                        onTap: viewModel.isGenerating ? null : viewModel.generatePlan,
+                        onTap: viewModel.isGenerating
+                            ? null
+                            : () async {
+                                final didRegenerate = await viewModel.generatePlan();
+                                if (!didRegenerate && context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'No profile changes detected. Update your profile to get a new recommendation.',
+                                      ),
+                                      duration: Duration(seconds: 3),
+                                    ),
+                                  );
+                                }
+                              },
                         child: Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(

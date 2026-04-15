@@ -13,6 +13,7 @@ class User {
   final String? goalType;
   final int? preferredMealsPerDay;
   final int? maxCookTime;
+  final String? explorationPreference;
   final List<String> excludedIngredients;
   final List<String> likedIngredients;
 
@@ -31,6 +32,7 @@ class User {
     this.goalType,
     this.preferredMealsPerDay,
     this.maxCookTime,
+    this.explorationPreference,
     this.excludedIngredients = const [],
     this.likedIngredients = const [],
   });
@@ -51,6 +53,7 @@ class User {
       goalType: json['goal_type'],
       preferredMealsPerDay: json['preferred_meals_per_day'],
       maxCookTime: json['max_cook_time'],
+      explorationPreference: json['exploration_preference'],
       excludedIngredients: (json['excluded_ingredients'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
@@ -78,6 +81,7 @@ class User {
       'goal_type': goalType,
       'preferred_meals_per_day': preferredMealsPerDay,
       'max_cook_time': maxCookTime,
+      'exploration_preference': explorationPreference,
       'excluded_ingredients': excludedIngredients,
       'liked_ingredients': likedIngredients,
     };
@@ -99,6 +103,7 @@ class User {
     int? preferredMealsPerDay,
     int? maxCookTime,
     bool clearMaxCookTime = false,
+    String? explorationPreference,
     List<String>? excludedIngredients,
     List<String>? likedIngredients,
   }) {
@@ -117,6 +122,7 @@ class User {
       goalType: goalType ?? this.goalType,
       preferredMealsPerDay: preferredMealsPerDay ?? this.preferredMealsPerDay,
       maxCookTime: clearMaxCookTime ? null : (maxCookTime ?? this.maxCookTime),
+      explorationPreference: explorationPreference ?? this.explorationPreference,
       excludedIngredients: excludedIngredients ?? this.excludedIngredients,
       likedIngredients: likedIngredients ?? this.likedIngredients,
     );

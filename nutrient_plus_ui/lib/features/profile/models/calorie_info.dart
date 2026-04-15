@@ -13,9 +13,9 @@ class CalorieInfo {
 
   factory CalorieInfo.fromJson(Map<String, dynamic> json) {
     return CalorieInfo(
-      bmr: json['bmr'].toDouble(),
-      tdee: json['tdee'].toDouble(),
-      dailyCalories: json['daily_calories'].toDouble(),
+      bmr: (json['bmr'] ?? 0).toDouble(),
+      tdee: (json['tdee'] ?? 0).toDouble(),
+      dailyCalories: (json['daily_calories'] ?? 0).toDouble(),
       goalType: json['goal_type'],
     );
   }

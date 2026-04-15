@@ -1,4 +1,4 @@
-import '../services/api_service.dart';
+import '../services/meal_service.dart';
 import '../../features/meal_plan/models/meal_models.dart';
 
 class MealPlanRepository {
@@ -6,7 +6,7 @@ class MealPlanRepository {
     int? numMeals,
     int? maxCookTime,
   }) async =>
-      await ApiService.generateMealPlan(
+      await MealService.generateMealPlan(
         numMeals: numMeals,
         maxCookTime: maxCookTime,
       );
@@ -15,17 +15,17 @@ class MealPlanRepository {
     required String planDate,
     required MealPlanResponse plan,
   }) async =>
-      await ApiService.saveMealPlan(planDate: planDate, plan: plan);
+      await MealService.saveMealPlan(planDate: planDate, plan: plan);
 
   Future<SavedPlansResult> getSavedMealPlans({
     required String startDate,
     required String endDate,
   }) async =>
-      await ApiService.getSavedMealPlans(startDate: startDate, endDate: endDate);
+      await MealService.getSavedMealPlans(startDate: startDate, endDate: endDate);
 
   Future<bool> syncMealHistory() async =>
-      await ApiService.syncMealHistory();
+      await MealService.syncMealHistory();
 
   Future<bool> addToHistory({required int recipeId}) async =>
-      await ApiService.rateMeal(recipeId: recipeId);
+      await MealService.rateMeal(recipeId: recipeId);
 }

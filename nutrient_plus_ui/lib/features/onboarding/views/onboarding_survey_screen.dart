@@ -243,6 +243,8 @@ class _OnboardingSurveyScreenState extends State<OnboardingSurveyScreen> {
         return _buildMealsPerDaySelector(vm);
       case 'maxCookTime':
         return _buildCookTimeSelector(vm);
+      case 'explorationPreference':
+        return _buildExplorationPreferenceSelector(vm);
       case 'mealPreferences':
         return _buildMealPreferencesSelector(vm);
       default:
@@ -386,6 +388,27 @@ class _OnboardingSurveyScreenState extends State<OnboardingSurveyScreen> {
           description: opt.$4,
           selected: selected,
           onTap: () => vm.setMaxCookTime(opt.$1),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildExplorationPreferenceSelector(OnboardingSurveyViewModel vm) {
+    final options = [
+      ('conservative', Icons.favorite_rounded, 'Stick with Favorites', 'Meals similar to what you already enjoy'),
+      ('balanced', Icons.swap_horiz_rounded, 'A Bit of Both', 'Mostly familiar, with some surprises'),
+      ('adventurous', Icons.explore_rounded, 'Surprise Me', 'Prioritise variety and new discoveries'),
+    ];
+
+    return Column(
+      children: options.map((opt) {
+        final selected = vm.explorationPreference == opt.$1;
+        return _OptionCard(
+          icon: opt.$2,
+          label: opt.$3,
+          description: opt.$4,
+          selected: selected,
+          onTap: () => vm.setExplorationPreference(opt.$1),
         );
       }).toList(),
     );

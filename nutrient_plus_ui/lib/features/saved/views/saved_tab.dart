@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../core/services/api_service.dart' show FavoriteRecipe, UserRating;
+import '../../../core/services/favorites_service.dart' show FavoriteRecipe;
+import '../../../core/services/ratings_service.dart' show UserRating;
 import '../../../core/utils/text_helpers.dart';
 import '../../meal_plan/models/meal_models.dart' show RecipeDetail;
 import '../viewmodels/saved_viewmodel.dart';

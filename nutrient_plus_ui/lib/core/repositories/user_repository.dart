@@ -1,5 +1,6 @@
 import '../../features/auth/models/user.dart';
-import '../services/api_service.dart';
+import '../services/auth_service.dart';
+import '../services/ingredients_service.dart';
 
 
 class UserRepository {
@@ -13,7 +14,7 @@ class UserRepository {
       return _cachedUser;
     }
 
-    final user = await ApiService.getCurrentUser();
+    final user = await AuthService.getCurrentUser();
     _cachedUser = user;
     return user;
   }
@@ -32,8 +33,9 @@ class UserRepository {
     int? preferredMealsPerDay,
     int? maxCookTime,
     bool clearMaxCookTime = false,
+    String? explorationPreference,
   }) async {
-    final result = await ApiService.updateProfile(
+    final result = await AuthService.updateProfile(
       currentWeight: currentWeight,
       goalWeight: goalWeight,
       gender: gender,
@@ -46,6 +48,7 @@ class UserRepository {
       preferredMealsPerDay: preferredMealsPerDay,
       maxCookTime: maxCookTime,
       clearMaxCookTime: clearMaxCookTime,
+      explorationPreference: explorationPreference,
     );
 
     if (result.success && result.user != null) {
@@ -58,25 +61,25 @@ class UserRepository {
   /// Clear cached user data
   void clearCache() {
     _cachedUser = null;
-    ApiService.clearUserCache();
+    AuthService.clearUserCache();
   }
 
   /// Check if user is logged in
   Future<bool> isLoggedIn() async {
-    return await ApiService.isLoggedIn();
+    return await AuthService.isLoggedIn();
   }
 
   /// Search ingredients by name
   Future<List<String>> searchIngredients({required String query}) async {
-    return await ApiService.searchIngredients(query: query);
+    return await IngredientsService.searchIngredients(query: query);
   }
 
   Future<List<String>> getExcludedIngredients() async {
-    return await ApiService.getExcludedIngredients();
+    return await IngredientsService.getExcludedIngredients();
   }
 
   Future<bool> addExcludedIngredient({required String ingredient}) async {
-    final success = await ApiService.addExcludedIngredient(ingredient: ingredient);
+    final success = await IngredientsService.addExcludedIngredient(ingredient: ingredient);
     if (success && _cachedUser != null) {
       final updated = [..._cachedUser!.excludedIngredients, ingredient];
       _cachedUser = _cachedUser!.copyWith(excludedIngredients: updated);
@@ -85,7 +88,7 @@ class UserRepository {
   }
 
   Future<bool> removeExcludedIngredient({required String ingredient}) async {
-    final success = await ApiService.removeExcludedIngredient(ingredient: ingredient);
+    final success = await IngredientsService.removeExcludedIngredient(ingredient: ingredient);
     if (success && _cachedUser != null) {
       final updated = _cachedUser!.excludedIngredients
           .where((i) => i != ingredient)
@@ -96,11 +99,11 @@ class UserRepository {
   }
 
   Future<List<String>> getLikedIngredients() async {
-    return await ApiService.getLikedIngredients();
+    return await IngredientsService.getLikedIngredients();
   }
 
   Future<bool> addLikedIngredient({required String ingredient}) async {
-    final success = await ApiService.addLikedIngredient(ingredient: ingredient);
+    final success = await IngredientsService.addLikedIngredient(ingredient: ingredient);
     if (success && _cachedUser != null) {
       final updated = [..._cachedUser!.likedIngredients, ingredient];
       _cachedUser = _cachedUser!.copyWith(likedIngredients: updated);
@@ -109,7 +112,7 @@ class UserRepository {
   }
 
   Future<bool> removeLikedIngredient({required String ingredient}) async {
-    final success = await ApiService.removeLikedIngredient(ingredient: ingredient);
+    final success = await IngredientsService.removeLikedIngredient(ingredient: ingredient);
     if (success && _cachedUser != null) {
       final updated = _cachedUser!.likedIngredients
           .where((i) => i != ingredient)

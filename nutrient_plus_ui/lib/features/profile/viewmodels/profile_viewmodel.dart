@@ -3,7 +3,7 @@ import 'package:health/health.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/base/base_viewmodel.dart';
 import '../../../core/repositories/user_repository.dart';
-import '../../../core/services/api_service.dart';
+import '../../../core/services/nutrition_service.dart';
 import '../../../core/services/health_service.dart';
 import '../../auth/models/user.dart';
 import '../models/calorie_info.dart';
@@ -44,7 +44,7 @@ class ProfileViewModel extends BaseViewModel {
 
     try {
       _user = await _userRepository.getCurrentUser(forceRefresh: forceRefresh);
-      final calorieResult = await ApiService.getCalorieInfo();
+      final calorieResult = await NutritionService.getCalorieInfo();
       if (calorieResult.success) {
         _calorieInfo = calorieResult.calorieInfo;
       }

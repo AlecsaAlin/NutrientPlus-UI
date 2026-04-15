@@ -1,4 +1,4 @@
-import '../services/api_service.dart';
+import '../services/auth_service.dart';
 
 /// Repository for authentication operations
 class AuthRepository {
@@ -8,7 +8,7 @@ class AuthRepository {
     required String username,
     required String password,
   }) async {
-    return await ApiService.register(
+    return await AuthService.register(
       email: email,
       username: username,
       password: password,
@@ -20,7 +20,7 @@ class AuthRepository {
     required String email,
     required String password,
   }) async {
-    return await ApiService.login(
+    return await AuthService.login(
       email: email,
       password: password,
     );
@@ -28,16 +28,16 @@ class AuthRepository {
 
   /// Logout user
   Future<void> logout() async {
-    await ApiService.logout();
+    await AuthService.logout();
   }
 
   /// Check if user is logged in
   Future<bool> isLoggedIn() async {
-    return await ApiService.isLoggedIn();
+    return await AuthService.isLoggedIn();
   }
 
   /// Get authentication token
   Future<String?> getToken() async {
-    return await ApiService.getToken();
+    return await AuthService.getToken();
   }
 }

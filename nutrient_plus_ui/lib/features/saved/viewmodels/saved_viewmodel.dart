@@ -1,6 +1,8 @@
 import '../../../core/base/base_viewmodel.dart';
 import '../../../core/repositories/recipe_repository.dart';
-import '../../../core/services/api_service.dart' show ApiService, FavoriteRecipe, UserRating;
+import '../../../core/services/favorites_service.dart' show FavoriteRecipe;
+import '../../../core/services/meal_service.dart';
+import '../../../core/services/ratings_service.dart' show UserRating;
 import '../../meal_plan/models/meal_models.dart';
 
 class SavedViewModel extends BaseViewModel {
@@ -112,7 +114,7 @@ class SavedViewModel extends BaseViewModel {
 
     MealPlanResponse plan;
 
-    final existingPlans = await ApiService.getSavedMealPlans(
+    final existingPlans = await MealService.getSavedMealPlans(
       startDate: dateStr,
       endDate: dateStr,
     );
@@ -122,7 +124,7 @@ class SavedViewModel extends BaseViewModel {
         existingPlans.plans!.containsKey(dateStr)) {
       plan = existingPlans.plans![dateStr]!;
     } else {
-      final generated = await ApiService.generateMealPlan();
+      final generated = await MealService.generateMealPlan();
       if (!generated.success || generated.mealPlan == null) return false;
       plan = generated.mealPlan!;
     }
@@ -131,7 +133,7 @@ class SavedViewModel extends BaseViewModel {
     plan.meals[bestIdx].recipe = recipe;
     plan.recalculateTotals();
 
-    return await ApiService.saveMealPlan(planDate: dateStr, plan: plan);
+    return await MealService.saveMealPlan(planDate: dateStr, plan: plan);
   }
 
   int _findBestSlotIndex(MealPlanResponse plan, double recipeCalories) {

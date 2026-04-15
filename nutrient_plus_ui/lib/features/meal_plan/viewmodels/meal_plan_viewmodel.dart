@@ -1,13 +1,19 @@
 import '../../../core/base/base_viewmodel.dart';
 import '../../../core/repositories/meal_plan_repository.dart';
+import '../../../core/repositories/user_repository.dart';
+import '../../../features/auth/models/user.dart';
 import '../models/meal_models.dart';
 
 /// ViewModel for Meal Plan screen
 class MealPlanViewModel extends BaseViewModel {
   final MealPlanRepository _mealPlanRepository;
+  final UserRepository _userRepository;
 
-  MealPlanViewModel({MealPlanRepository? mealPlanRepository})
-      : _mealPlanRepository = mealPlanRepository ?? MealPlanRepository();
+  MealPlanViewModel({
+    MealPlanRepository? mealPlanRepository,
+    UserRepository? userRepository,
+  })  : _mealPlanRepository = mealPlanRepository ?? MealPlanRepository(),
+        _userRepository = userRepository ?? UserRepository();
 
   late DateTime _selectedDate;
   bool _isGenerating = false;
@@ -16,6 +22,9 @@ class MealPlanViewModel extends BaseViewModel {
 
   // Cache generated plans by date string (YYYY-MM-DD)
   final Map<String, MealPlanResponse> _savedPlans = {};
+
+  // Snapshot of profile params at last plan generation (null = no generation this session)
+  Map<String, dynamic>? _lastProfileSnapshot;
 
   // Number of days to show before and after today
   static const int daysRange = 15;
@@ -84,8 +93,44 @@ class MealPlanViewModel extends BaseViewModel {
     notifyListeners();
   }
 
-  /// Generate a new meal plan
-  Future<void> generatePlan() async {
+  /// Build a comparable snapshot of the profile fields that influence meal plan generation.
+  Map<String, dynamic> _buildProfileSnapshot(User user) {
+    final excluded = [...user.excludedIngredients]..sort();
+    final liked = [...user.likedIngredients]..sort();
+    return {
+      'activityLevel': user.activityLevel,
+      'goalType': user.goalType,
+      'preferredMealsPerDay': user.preferredMealsPerDay,
+      'maxCookTime': user.maxCookTime,
+      'explorationPreference': user.explorationPreference,
+      'currentWeight': user.currentWeight,
+      'goalWeight': user.goalWeight,
+      'height': user.height,
+      'age': user.age,
+      'gender': user.gender,
+      'excludedIngredients': excluded.join(','),
+      'likedIngredients': liked.join(','),
+    };
+  }
+
+  bool _hasProfileChanged(User user) {
+    if (_lastProfileSnapshot == null) return true;
+    final current = _buildProfileSnapshot(user);
+    if (current.length != _lastProfileSnapshot!.length) return true;
+    for (final key in current.keys) {
+      if (current[key] != _lastProfileSnapshot![key]) return true;
+    }
+    return false;
+  }
+
+  /// Generate a new meal plan. Returns true if a new plan was generated,
+  /// false if profile parameters have not changed since the last generation.
+  Future<bool> generatePlan() async {
+    final user = await _userRepository.getCurrentUser();
+    if (user != null && !_hasProfileChanged(user)) {
+      return false;
+    }
+
     _isGenerating = true;
     _error = null;
     notifyListeners();
@@ -98,10 +143,13 @@ class MealPlanViewModel extends BaseViewModel {
       _savedPlans[dateKey] = result.mealPlan!;
       // Save to backend in the background
       _mealPlanRepository.saveMealPlan(planDate: dateKey, plan: result.mealPlan!);
+      // Record profile state so repeated refreshes are blocked until something changes
+      if (user != null) _lastProfileSnapshot = _buildProfileSnapshot(user);
     } else {
       _error = result.error ?? 'Failed to generate meal plan';
     }
     notifyListeners();
+    return true;
   }
 
   /// Swap a meal with an alternative

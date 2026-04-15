@@ -121,3 +121,8 @@ app.*.symbols
 !/packages/flutter_tools/test/data/dart_dependencies_test/**/.packages
 !/dev/ci/**/Gemfile.lock
 nutrient_plus_ui/lib/core/config.dart
+/.claude
+/graphify-out
+/nutrient_plus_ui/graphify-out
+/nutrient_plus_ui/lib/graphify-out
+CLAUDE.md

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../core/services/api_service.dart' as api;
+import '../../../core/services/auth_service.dart';
 import 'login_screen.dart';
 import '../../home/views/home_screen.dart';
 
@@ -21,11 +21,11 @@ class _SplashScreenState extends State<SplashScreen> {
     await Future.delayed(const Duration(milliseconds: 1500));
 
     try {
-      final isLoggedIn = await api.ApiService.isLoggedIn();
+      final isLoggedIn = await AuthService.isLoggedIn();
 
       if (mounted) {
         if (isLoggedIn) {
-          final user = await api.ApiService.getCurrentUser();
+          final user = await AuthService.getCurrentUser();
           
           if (user != null) {
             Navigator.pushReplacement(
@@ -33,7 +33,7 @@ class _SplashScreenState extends State<SplashScreen> {
               MaterialPageRoute(builder: (context) => const HomeScreen()),
             );
           } else {
-            await api.ApiService.logout();
+            await AuthService.logout();
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(builder: (context) => const LoginScreen()),
