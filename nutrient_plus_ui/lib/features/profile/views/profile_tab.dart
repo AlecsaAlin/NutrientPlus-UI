@@ -831,7 +831,105 @@ class _ProfileTabState extends State<ProfileTab> {
             ),
           ],
         ),
+        const SizedBox(height: 12),
+        _buildExplorationPreferenceCard(viewModel),
       ],
+    );
+  }
+
+  Widget _buildExplorationPreferenceCard(ProfileViewModel viewModel) {
+    final current = ExplorationPreference.fromString(viewModel.user?.explorationPreference);
+
+    return GestureDetector(
+      onTap: () => _showExplorationPreferenceDialog(viewModel),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey[200]!),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.explore, size: 18, color: Colors.teal[600]),
+                const SizedBox(width: 8),
+                Text(
+                  'RECIPE EXPLORATION',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[500],
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const Spacer(),
+                Icon(Icons.edit, size: 14, color: Colors.grey[400]),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              current.label,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              current.description,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey[500],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showExplorationPreferenceDialog(ProfileViewModel viewModel) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Recipe Exploration',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Controls how much variety the meal planner introduces.',
+              style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+            ),
+            const SizedBox(height: 16),
+            ...ExplorationPreference.values.map((pref) => _buildSelectionOption(
+              label: pref.label,
+              description: pref.description,
+              isSelected: viewModel.user?.explorationPreference == pref.value,
+              onTap: () {
+                Navigator.pop(context);
+                viewModel.updateExplorationPreference(pref.value);
+              },
+            )),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
     );
   }
 

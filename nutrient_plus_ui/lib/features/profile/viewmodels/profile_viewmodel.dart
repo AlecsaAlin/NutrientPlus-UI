@@ -80,7 +80,9 @@ class ProfileViewModel extends BaseViewModel {
   }
 
   Future<void> _fetchWeeklyAvgSteps() async {
-    _weeklyAvgSteps = await HealthService.fetchAvgDailySteps(days: 7);
+    final now = DateTime.now();
+    final yesterday = DateTime(now.year, now.month, now.day - 1);
+    _weeklyAvgSteps = await HealthService.fetchAvgDailySteps(days: 7, endDate: yesterday);
   }
 
   Future<void> setDynamicActivityEnabled(bool enabled) async {
@@ -199,6 +201,18 @@ class ProfileViewModel extends BaseViewModel {
     notifyListeners();
 
     final result = await _userRepository.updateProfile(preferredMealsPerDay: meals);
+    if (result.success && result.user != null) {
+      _user = result.user;
+      notifyListeners();
+    }
+  }
+
+  /// Update exploration preference
+  Future<void> updateExplorationPreference(String explorationPreference) async {
+    _user = _user?.copyWith(explorationPreference: explorationPreference);
+    notifyListeners();
+
+    final result = await _userRepository.updateProfile(explorationPreference: explorationPreference);
     if (result.success && result.user != null) {
       _user = result.user;
       notifyListeners();

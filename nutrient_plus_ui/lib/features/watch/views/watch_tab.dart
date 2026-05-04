@@ -571,9 +571,8 @@ class _WatchTabState extends State<WatchTab> {
               final barHeight = maxSteps > 0
                   ? (steps / maxSteps * 60).clamp(4.0, 60.0)
                   : 4.0;
-              final isToday = index == 6;
-
-              final date = now.subtract(Duration(days: 6 - index));
+              
+              final date = now.subtract(Duration(days: 7 - index));
               final dayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
               final dayLabel = dayLabels[date.weekday - 1];
 
@@ -595,7 +594,7 @@ class _WatchTabState extends State<WatchTab> {
                         style: TextStyle(
                           fontSize: 9,
                           fontWeight: FontWeight.w600,
-                          color: isToday ? const Color(0xFF2D5016) : Colors.grey[500],
+                          color: Colors.grey[500],
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -603,17 +602,8 @@ class _WatchTabState extends State<WatchTab> {
                         width: double.infinity,
                         height: barHeight,
                         decoration: BoxDecoration(
-                          color: isToday
-                              ? const Color(0xFF2D5016)
-                              : const Color(0xFF2D5016).withValues(alpha: 0.35),
+                          color: const Color(0xFF2D5016).withValues(alpha: 0.35),
                           borderRadius: BorderRadius.circular(6),
-                          boxShadow: isToday ? [
-                            BoxShadow(
-                              color: const Color(0xFF2D5016).withValues(alpha: 0.4),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ] : null,
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -621,8 +611,8 @@ class _WatchTabState extends State<WatchTab> {
                         dayLabel,
                         style: TextStyle(
                           fontSize: 11,
-                          fontWeight: isToday ? FontWeight.bold : FontWeight.w500,
-                          color: isToday ? const Color(0xFF2D5016) : Colors.grey[400],
+                          fontWeight: FontWeight.w500,
+                          color: Colors.grey[400],
                         ),
                       ),
                     ],
@@ -700,9 +690,8 @@ class _WatchTabState extends State<WatchTab> {
               final barHeight = maxCalories > 0
                   ? (calories / maxCalories * 60).clamp(4.0, 60.0)
                   : 4.0;
-              final isToday = index == 6;
 
-              final date = now.subtract(Duration(days: 6 - index));
+              final date = now.subtract(Duration(days: 7 - index));
               final dayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
               final dayLabel = dayLabels[date.weekday - 1];
 
@@ -719,7 +708,7 @@ class _WatchTabState extends State<WatchTab> {
                         style: TextStyle(
                           fontSize: 9,
                           fontWeight: FontWeight.w600,
-                          color: isToday ? Colors.orange[600] : Colors.grey[500],
+                          color: Colors.grey[500],
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -727,17 +716,8 @@ class _WatchTabState extends State<WatchTab> {
                         width: double.infinity,
                         height: barHeight,
                         decoration: BoxDecoration(
-                          color: isToday
-                              ? Colors.orange[500]
-                              : Colors.orange[500]!.withValues(alpha: 0.35),
+                          color: Colors.orange[500]!.withValues(alpha: 0.35),
                           borderRadius: BorderRadius.circular(6),
-                          boxShadow: isToday ? [
-                            BoxShadow(
-                              color: Colors.orange[500]!.withValues(alpha: 0.4),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ] : null,
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -745,8 +725,8 @@ class _WatchTabState extends State<WatchTab> {
                         dayLabel,
                         style: TextStyle(
                           fontSize: 11,
-                          fontWeight: isToday ? FontWeight.bold : FontWeight.w500,
-                          color: isToday ? Colors.orange[600] : Colors.grey[400],
+                          fontWeight: FontWeight.w500,
+                          color: Colors.grey[400],
                         ),
                       ),
                     ],

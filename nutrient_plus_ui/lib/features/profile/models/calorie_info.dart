@@ -72,3 +72,23 @@ enum GoalType {
     );
   }
 }
+
+
+enum ExplorationPreference {
+  conservative('conservative', 'Conservative', 'Stick to recipes you already like'),
+  balanced('balanced', 'Balanced', 'Mix of familiar and new recipes'),
+  adventurous('adventurous', 'Adventurous', 'Discover lots of new recipes');
+
+  final String value;
+  final String label;
+  final String description;
+
+  const ExplorationPreference(this.value, this.label, this.description);
+
+  static ExplorationPreference fromString(String? value) {
+    return ExplorationPreference.values.firstWhere(
+      (e) => e.value == value,
+      orElse: () => ExplorationPreference.balanced,
+    );
+  }
+}

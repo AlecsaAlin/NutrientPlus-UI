@@ -107,6 +107,11 @@ class WatchViewModel extends BaseViewModel {
         : DateTime(selectedDate.year, selectedDate.month, selectedDate.day, 23, 59, 59);
 
     final sleepStart = startOfDay.subtract(const Duration(hours: 12));
+  
+    final sleepEndCandidate = startOfDay.add(const Duration(hours: 14));
+    final sleepEnd = sleepEndCandidate.isAfter(DateTime.now())
+        ? DateTime.now()
+        : sleepEndCandidate;
 
     try {
       List<HealthDataPoint> healthData = await _health.getHealthDataFromTypes(
@@ -128,7 +133,7 @@ class WatchViewModel extends BaseViewModel {
             HealthDataType.SLEEP_REM,
           ],
           startTime: sleepStart,
-          endTime: endOfDay,
+          endTime: sleepEnd,
         );
       } catch (e) {
         // Sleep fetch error
@@ -191,7 +196,10 @@ class WatchViewModel extends BaseViewModel {
 
   Future<void> fetchWeeklyData() async {
     final now = DateTime.now();
-    final sevenDaysAgo = DateTime(now.year, now.month, now.day - 6);
+    // Use yesterday as the end so the current (incomplete) day is excluded.
+    final yesterday = DateTime(now.year, now.month, now.day - 1);
+    final endOfYesterday = DateTime(yesterday.year, yesterday.month, yesterday.day, 23, 59, 59);
+    final sevenDaysAgo = DateTime(now.year, now.month, now.day - 7);
 
     List<double> weeklyCalories = List.filled(7, 0);
 
@@ -199,12 +207,15 @@ class WatchViewModel extends BaseViewModel {
       List<HealthDataPoint> calorieData = await _health.getHealthDataFromTypes(
         types: [HealthDataType.ACTIVE_ENERGY_BURNED],
         startTime: sevenDaysAgo,
-        endTime: now,
+        endTime: endOfYesterday,
       );
       calorieData = _health.removeDuplicates(calorieData);
 
       for (var point in calorieData) {
-        final daysDiff = now.difference(DateTime(point.dateFrom.year, point.dateFrom.month, point.dateFrom.day)).inDays;
+        // Index 0 = 7 days ago … index 6 = yesterday
+        final daysDiff = endOfYesterday
+            .difference(DateTime(point.dateFrom.year, point.dateFrom.month, point.dateFrom.day))
+            .inDays;
         final dayIndex = 6 - daysDiff;
         if (dayIndex >= 0 && dayIndex < 7) {
           weeklyCalories[dayIndex] += (point.value as NumericHealthValue).numericValue.toDouble();
@@ -214,7 +225,7 @@ class WatchViewModel extends BaseViewModel {
       // Weekly calorie fetch error
     }
 
-    _weeklySteps = await HealthService.fetchDailySteps(days: 7);
+    _weeklySteps = await HealthService.fetchDailySteps(days: 7, endDate: yesterday);
     _weeklyCalories = weeklyCalories;
     notifyListeners();
   }
