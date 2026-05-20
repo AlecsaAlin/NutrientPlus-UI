@@ -176,9 +176,25 @@ class MealPlanViewModel extends BaseViewModel {
     // Save updated plan to backend
     final dateKey = formatDate(_selectedDate);
     _mealPlanRepository.saveMealPlan(planDate: dateKey, plan: plan);
+  }
 
-    // Record the chosen alternative in meal history immediately
-    _mealPlanRepository.addToHistory(recipeId: alternative.recipeId);
+  /// Update the aggregated rating of a recipe in the current plan (live after user rates)
+  void updateRecipeRating(int mealIndex, double newAggregatedRating, int newReviewCount) {
+    final plan = currentPlan;
+    if (plan == null) return;
+
+    final slot = plan.meals[mealIndex];
+    if (slot.recipe != null) {
+      slot.recipe = slot.recipe!.copyWith(
+        aggregatedRating: newAggregatedRating,
+        reviewCount: newReviewCount,
+      );
+    }
+    notifyListeners();
+
+    // Persist the updated plan
+    final dateKey = formatDate(_selectedDate);
+    _mealPlanRepository.saveMealPlan(planDate: dateKey, plan: plan);
   }
 
   /// Check if a date has a plan

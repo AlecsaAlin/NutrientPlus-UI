@@ -66,6 +66,9 @@ class _MealPlanTabState extends State<MealPlanTab> {
         onSwapAlternative: (mi, ai) {
           viewModel.swapAlternative(mi, ai);
         },
+        onRatingUpdated: (mi, aggRating, reviewCount) {
+          viewModel.updateRecipeRating(mi, aggRating, reviewCount);
+        },
       ),
     );
   }
@@ -596,6 +599,14 @@ class _MealPlanTabState extends State<MealPlanTab> {
                 if (recipe.numIngredients != null && recipe.numIngredients! > 0)
                   _buildMacroChip('', '${recipe.numIngredients} ing', Colors.green[600]!,
                       icon: Icons.shopping_basket_outlined),
+                if (recipe.aggregatedRating != null && recipe.aggregatedRating! > 0)
+                  _buildMacroChip(
+                    '',
+                    '${recipe.aggregatedRating!.toStringAsFixed(1)}'
+                        '${recipe.reviewCount != null && recipe.reviewCount! > 0 ? " (${recipe.reviewCount})" : ""}',
+                    Colors.amber[700]!,
+                    icon: Icons.star,
+                  ),
                 if (slot.alternatives.isNotEmpty && viewModel.canSwap)
                   Row(
                     mainAxisSize: MainAxisSize.min,
@@ -717,12 +728,14 @@ class _MealDetailsSheet extends StatefulWidget {
   final int mealIndex;
   final bool canSwap;
   final void Function(int, int) onSwapAlternative;
+  final void Function(int mealIndex, double aggregatedRating, int reviewCount)? onRatingUpdated;
 
   const _MealDetailsSheet({
     required this.slot,
     required this.mealIndex,
     required this.canSwap,
     required this.onSwapAlternative,
+    this.onRatingUpdated,
   });
 
   @override
@@ -735,10 +748,14 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
   bool _isLoadingFavorite = true;
   double? _userRating;
   bool _isLoadingRating = true;
+  double? _localAggregatedRating;
+  int? _localReviewCount;
 
   @override
   void initState() {
     super.initState();
+    _localAggregatedRating = widget.slot.recipe?.aggregatedRating;
+    _localReviewCount = widget.slot.recipe?.reviewCount;
     _loadInitialData();
   }
 
@@ -800,7 +817,37 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
 
     final success = await _recipeRepository.rateRecipe(recipeId: recipe.recipeId, rating: rating);
 
-    if (!success && mounted) {
+    if (success && mounted) {
+      setState(() {
+        final baseAvg = _localAggregatedRating ?? 0.0;
+        final baseCnt = _localReviewCount ?? 0;
+
+        if (previousRating == null) {
+          // New rating: add to pool
+          final newCnt = baseCnt + 1;
+          _localAggregatedRating = double.parse(
+            ((baseAvg * baseCnt + rating) / newCnt).toStringAsFixed(2),
+          );
+          _localReviewCount = newCnt;
+        } else {
+          // Updated rating: replace old value, count stays the same
+          if (baseCnt > 0) {
+            _localAggregatedRating = double.parse(
+              ((baseAvg * baseCnt - previousRating + rating) / baseCnt).toStringAsFixed(2),
+            );
+          }
+        }
+      });
+
+      // Propagate to the meal card in the list
+      if (_localAggregatedRating != null && _localReviewCount != null) {
+        widget.onRatingUpdated?.call(
+          widget.mealIndex,
+          _localAggregatedRating!,
+          _localReviewCount!,
+        );
+      }
+    } else if (!success && mounted) {
       setState(() => _userRating = previousRating);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -987,6 +1034,32 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
               ]),
               const SizedBox(height: 20),
             ],
+
+            // Aggregated rating + review count (always visible)
+            Row(children: [
+              Icon(
+                Icons.star,
+                size: 20,
+                color: (_localAggregatedRating != null && _localAggregatedRating! > 0)
+                    ? Colors.amber[700]
+                    : Colors.grey[400],
+              ),
+              const SizedBox(width: 8),
+              Text(
+                (_localAggregatedRating != null && _localAggregatedRating! > 0)
+                    ? '${_localAggregatedRating!.toStringAsFixed(1)} / 5'
+                      '${_localReviewCount != null && _localReviewCount! > 0 ? "  •  $_localReviewCount review${_localReviewCount! == 1 ? "" : "s"}" : ""}'
+                    : 'No reviews yet',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: (_localAggregatedRating != null && _localAggregatedRating! > 0)
+                      ? Colors.grey[700]
+                      : Colors.grey[400],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ]),
+            const SizedBox(height: 20),
 
             // Category
             if (recipe.category != null && recipe.category!.isNotEmpty) ...[

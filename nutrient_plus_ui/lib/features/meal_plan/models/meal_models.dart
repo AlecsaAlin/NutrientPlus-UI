@@ -12,6 +12,8 @@ class RecipeDetail {
   final String? ingredients;
   final String? instructions;
   final int? numIngredients;
+  final double? aggregatedRating;
+  final int? reviewCount;
   final double predictedRating;
   final double matchScore;
 
@@ -29,6 +31,8 @@ class RecipeDetail {
     this.ingredients,
     this.instructions,
     this.numIngredients,
+    this.aggregatedRating,
+    this.reviewCount,
     required this.predictedRating,
     required this.matchScore,
   });
@@ -48,8 +52,35 @@ class RecipeDetail {
       ingredients: json['ingredients'],
       instructions: json['instructions'],
       numIngredients: json['num_ingredients'],
+      aggregatedRating: (json['aggregated_rating'] as num?)?.toDouble(),
+      reviewCount: json['review_count'],
       predictedRating: (json['predicted_rating'] ?? 0).toDouble(),
       matchScore: (json['match_score'] ?? 0).toDouble(),
+    );
+  }
+
+  RecipeDetail copyWith({
+    double? aggregatedRating,
+    int? reviewCount,
+  }) {
+    return RecipeDetail(
+      recipeId: recipeId,
+      name: name,
+      calories: calories,
+      proteinG: proteinG,
+      fatG: fatG,
+      carbsG: carbsG,
+      sugarG: sugarG,
+      fiberG: fiberG,
+      totalTimeMinutes: totalTimeMinutes,
+      category: category,
+      ingredients: ingredients,
+      instructions: instructions,
+      numIngredients: numIngredients,
+      aggregatedRating: aggregatedRating ?? this.aggregatedRating,
+      reviewCount: reviewCount ?? this.reviewCount,
+      predictedRating: predictedRating,
+      matchScore: matchScore,
     );
   }
 
@@ -67,6 +98,8 @@ class RecipeDetail {
     'ingredients': ingredients,
     'instructions': instructions,
     'num_ingredients': numIngredients,
+    'aggregated_rating': aggregatedRating,
+    'review_count': reviewCount,
     'predicted_rating': predictedRating,
     'match_score': matchScore,
   };
