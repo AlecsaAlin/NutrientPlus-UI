@@ -4,6 +4,7 @@ import '../models/meal_models.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/text_helpers.dart';
 import '../../../core/repositories/recipe_repository.dart';
+import '../../../core/services/price_service.dart';
 import '../viewmodels/meal_plan_viewmodel.dart';
 
 class MealPlanTab extends StatefulWidget {
@@ -751,6 +752,11 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
   double? _localAggregatedRating;
   int? _localReviewCount;
 
+  // Price estimation
+  RecipePriceResponse? _priceEstimate;
+  bool _isLoadingPrice = true;
+  bool _priceBreakdownExpanded = false;
+
   @override
   void initState() {
     super.initState();
@@ -774,6 +780,14 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
         _userRating = results[1] as double?;
         _isLoadingFavorite = false;
         _isLoadingRating = false;
+      });
+    }
+
+    final estimate = await PriceService.getRecipePrice(recipeId: recipe.recipeId);
+    if (mounted) {
+      setState(() {
+        _priceEstimate = estimate;
+        _isLoadingPrice = false;
       });
     }
   }
@@ -935,6 +949,189 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
   String _capitalize(String s) {
     if (s.isEmpty) return s;
     return s[0].toUpperCase() + s.substring(1);
+  }
+
+  Widget _buildPriceSection() {
+    if (_isLoadingPrice) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.green[50],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.green[200]!),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.shopping_cart_outlined, color: Colors.green[700], size: 20),
+            const SizedBox(width: 10),
+            Text('Estimating recipe cost…',
+                style: TextStyle(fontSize: 14, color: Colors.green[700])),
+            const Spacer(),
+            SizedBox(
+              width: 16, height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.green[700]),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final estimate = _priceEstimate;
+    if (estimate == null) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.grey[100],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey[200]!),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.shopping_cart_outlined, color: Colors.grey[400], size: 20),
+            const SizedBox(width: 10),
+            Text('Price estimate unavailable',
+                style: TextStyle(fontSize: 14, color: Colors.grey[500])),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: estimate.ingredients.isNotEmpty
+              ? () => setState(() => _priceBreakdownExpanded = !_priceBreakdownExpanded)
+              : null,
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: estimate.hasCost ? Colors.green[50] : Colors.grey[100],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: estimate.hasCost ? Colors.green[200]! : Colors.grey[200]!,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.shopping_cart_outlined,
+                  color: estimate.hasCost ? Colors.green[700] : Colors.grey[500],
+                  size: 20,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        estimate.hasCost ? 'Estimated Cost' : 'No price data available',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: estimate.hasCost ? Colors.green[700] : Colors.grey[500],
+                        ),
+                      ),
+                      if (estimate.coverageLabel.isNotEmpty)
+                        Text(estimate.coverageLabel,
+                            style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                    ],
+                  ),
+                ),
+                if (estimate.hasCost)
+                  Text(
+                    '~${estimate.totalCost!.toStringAsFixed(2)} ${estimate.currency}',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green[700],
+                    ),
+                  ),
+                if (estimate.ingredients.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Icon(
+                    _priceBreakdownExpanded
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
+                    color: Colors.grey[500],
+                    size: 20,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+
+        if (_priceBreakdownExpanded && estimate.ingredients.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: Column(
+              children: estimate.ingredients
+                  .map((ing) => _buildIngredientCostRow(ing))
+                  .toList(),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildIngredientCostRow(IngredientPriceDetail ing) {
+    final hasCost = ing.cost != null;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Icon(
+            hasCost ? Icons.check_circle_outline : Icons.radio_button_unchecked,
+            size: 14,
+            color: hasCost ? Colors.green[600] : Colors.grey[400],
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  ing.name,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (ing.quantityLabel.isNotEmpty || ing.unitPriceLabel.isNotEmpty)
+                  Row(
+                    children: [
+                      if (ing.quantityLabel.isNotEmpty)
+                        Text(ing.quantityLabel,
+                            style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                      if (ing.quantityLabel.isNotEmpty && ing.unitPriceLabel.isNotEmpty)
+                        Text(' · ', style: TextStyle(fontSize: 11, color: Colors.grey[400])),
+                      if (ing.unitPriceLabel.isNotEmpty)
+                        Text(ing.unitPriceLabel,
+                            style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+          if (hasCost)
+            Text(
+              '~${ing.cost!.toStringAsFixed(2)} €',
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.green[700]),
+            )
+          else
+            Text('N/A', style: TextStyle(fontSize: 12, color: Colors.grey[400])),
+        ],
+      ),
+    );
   }
 
   @override
@@ -1100,6 +1297,10 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
               ),
               const SizedBox(height: 20),
             ],
+
+            // Price estimate
+            _buildPriceSection(),
+            const SizedBox(height: 20),
 
             // Instructions
             if (recipe.instructions != null && recipe.instructions!.isNotEmpty) ...[
