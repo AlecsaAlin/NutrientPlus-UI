@@ -23,8 +23,8 @@ class MealPlanViewModel extends BaseViewModel {
   // Cache generated plans by date string (YYYY-MM-DD)
   final Map<String, MealPlanResponse> _savedPlans = {};
 
-  // Snapshot of profile params at last plan generation (null = no generation this session)
-  Map<String, dynamic>? _lastProfileSnapshot;
+  // Snapshot of profile params per date at last plan generation
+  final Map<String, Map<String, dynamic>> _profileSnapshotsByDate = {};
 
   // Number of days to show before and after today
   static const int daysRange = 15;
@@ -113,21 +113,23 @@ class MealPlanViewModel extends BaseViewModel {
     };
   }
 
-  bool _hasProfileChanged(User user) {
-    if (_lastProfileSnapshot == null) return true;
+  bool _hasProfileChanged(User user, String dateKey) {
+    final previousSnapshot = _profileSnapshotsByDate[dateKey];
+    if (previousSnapshot == null) return true;
     final current = _buildProfileSnapshot(user);
-    if (current.length != _lastProfileSnapshot!.length) return true;
+    if (current.length != previousSnapshot.length) return true;
     for (final key in current.keys) {
-      if (current[key] != _lastProfileSnapshot![key]) return true;
+      if (current[key] != previousSnapshot[key]) return true;
     }
     return false;
   }
 
   /// Generate a new meal plan. Returns true if a new plan was generated,
-  /// false if profile parameters have not changed since the last generation.
+  /// false if profile parameters have not changed since the last generation for this date.
   Future<bool> generatePlan() async {
+    final dateKey = formatDate(_selectedDate);
     final user = await _userRepository.getCurrentUser();
-    if (user != null && !_hasProfileChanged(user)) {
+    if (user != null && !_hasProfileChanged(user, dateKey)) {
       return false;
     }
 
@@ -139,12 +141,11 @@ class MealPlanViewModel extends BaseViewModel {
 
     _isGenerating = false;
     if (result.success && result.mealPlan != null) {
-      final dateKey = formatDate(_selectedDate);
       _savedPlans[dateKey] = result.mealPlan!;
       // Save to backend in the background
       _mealPlanRepository.saveMealPlan(planDate: dateKey, plan: result.mealPlan!);
-      // Record profile state so repeated refreshes are blocked until something changes
-      if (user != null) _lastProfileSnapshot = _buildProfileSnapshot(user);
+      // Record profile state for this date so repeated refreshes are blocked until something changes
+      if (user != null) _profileSnapshotsByDate[dateKey] = _buildProfileSnapshot(user);
     } else {
       _error = result.error ?? 'Failed to generate meal plan';
     }

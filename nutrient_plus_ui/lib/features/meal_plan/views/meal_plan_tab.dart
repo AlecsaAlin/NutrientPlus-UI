@@ -770,23 +770,24 @@ class _MealDetailsSheetState extends State<_MealDetailsSheet> {
     if (recipe == null) return;
 
     final results = await Future.wait([
-      _recipeRepository.isFavorite(recipeId: recipe.recipeId),
-      _recipeRepository.getRecipeRating(recipeId: recipe.recipeId),
+      _recipeRepository
+          .isFavorite(recipeId: recipe.recipeId)
+          .catchError((_) => false),
+      _recipeRepository
+          .getRecipeRating(recipeId: recipe.recipeId)
+          .catchError((_) => null),
+      PriceService
+          .getRecipePrice(recipeId: recipe.recipeId)
+          .catchError((_) => null),
     ]);
 
     if (mounted) {
       setState(() {
-        _isFavorite = results[0] as bool;
+        _isFavorite = (results[0] as bool?) ?? false;
         _userRating = results[1] as double?;
+        _priceEstimate = results[2] as RecipePriceResponse?;
         _isLoadingFavorite = false;
         _isLoadingRating = false;
-      });
-    }
-
-    final estimate = await PriceService.getRecipePrice(recipeId: recipe.recipeId);
-    if (mounted) {
-      setState(() {
-        _priceEstimate = estimate;
         _isLoadingPrice = false;
       });
     }
